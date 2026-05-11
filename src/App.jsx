@@ -57,11 +57,13 @@ export default function App() {
               <button
                 key={n.id}
                 onClick={() => navigate(n.id)}
+                aria-label={n.label}
+                data-nav={n.id}
                 className={`py-3 flex flex-col items-center gap-0.5 transition ${
                   active ? 'text-rose' : 'text-ink/60'
                 }`}
               >
-                <span className="text-base leading-none">{n.icon}</span>
+                <span className="text-base leading-none" aria-hidden="true">{n.icon}</span>
                 <span>{n.label}</span>
               </button>
             )
