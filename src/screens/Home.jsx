@@ -1,10 +1,20 @@
+import { useState } from 'react'
 import { useApp, overallStats } from '../context/AppContext.jsx'
+import { getDemoState } from '../utils/demoData.js'
 
 export default function Home({ navigate }) {
-  const { t, state } = useApp()
+  const { t, state, dispatch, lang } = useApp()
   const stats = overallStats(state.items)
   const hasVision = !!(state.vision?.ideal || state.vision?.atmosphere || state.vision?.timeFor)
   const hasItems = state.items.length > 0
+  const [demoFlash, setDemoFlash] = useState(false)
+
+  const loadDemo = () => {
+    if ((hasItems || hasVision) && !window.confirm(t.demo.confirm)) return
+    dispatch({ type: 'LOAD_STATE', payload: getDemoState(lang) })
+    setDemoFlash(true)
+    setTimeout(() => setDemoFlash(false), 1800)
+  }
 
   return (
     <div className="space-y-6">
@@ -19,6 +29,16 @@ export default function Home({ navigate }) {
       <section className="card p-5">
         <p className="text-sm text-ink/75 leading-relaxed">{t.home.intro}</p>
       </section>
+
+      {!hasItems && !hasVision && (
+        <section className="card p-5 bg-blush/25 border-blush/40">
+          <h3 className="font-medium text-sm">✦ {t.demo.title}</h3>
+          <p className="text-sm text-ink/70 mt-2 leading-relaxed">{t.demo.body}</p>
+          <button onClick={loadDemo} className="btn-primary mt-4 w-full">
+            {demoFlash ? t.demo.loaded : t.demo.load}
+          </button>
+        </section>
+      )}
 
       {hasItems && (
         <section className="grid grid-cols-3 gap-3">

@@ -117,6 +117,25 @@ export const translations = {
       no: '否',
       language: '语言',
       install: '添加到主屏幕'
+    },
+    demo: {
+      title: '想先看看效果？',
+      body: '载入一份示例数据：愿景板已填好、衣服/书籍/文件三类已完成、小物在进行中。可以随时清空。',
+      load: '载入示例数据',
+      loaded: '示例数据已载入 ✨',
+      confirm: '当前已有数据，载入示例将覆盖现有内容，确认继续？',
+      cancel: '取消'
+    },
+    backup: {
+      title: '备份与恢复',
+      export: '导出为 JSON',
+      exportHint: '把所有数据下载到本地，方便备份或分享给朋友',
+      import: '从 JSON 恢复',
+      importHint: '选择之前导出的 JSON 文件',
+      importConfirm: '当前已有数据，导入将覆盖现有内容，确认继续？',
+      importDone: '已恢复 ✨',
+      importBadFile: '文件无法识别，请确认是 Spark Joy 的备份文件。',
+      importEmpty: '文件中没有可用数据。'
     }
   },
   en: {
@@ -237,6 +256,25 @@ export const translations = {
       no: 'No',
       language: 'Language',
       install: 'Install'
+    },
+    demo: {
+      title: 'Want to see it in action?',
+      body: 'Load a sample journey: vision filled in, clothes/books/papers done, komono in progress. Clear it anytime.',
+      load: 'Load sample data',
+      loaded: 'Sample loaded ✨',
+      confirm: 'You already have data. Loading the sample will overwrite it. Continue?',
+      cancel: 'Cancel'
+    },
+    backup: {
+      title: 'Backup & restore',
+      export: 'Export as JSON',
+      exportHint: 'Download all data — keep a backup or share with a friend',
+      import: 'Restore from JSON',
+      importHint: 'Pick a JSON file you exported earlier',
+      importConfirm: 'You already have data. Importing will overwrite it. Continue?',
+      importDone: 'Restored ✨',
+      importBadFile: "File couldn't be read. Make sure it's a Spark Joy backup.",
+      importEmpty: 'No usable data in this file.'
     }
   }
 }

@@ -1,11 +1,46 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useApp, CATEGORY_IDS, categoryStats, overallStats } from '../context/AppContext.jsx'
+import { downloadBackup, parseBackup } from '../utils/backup.js'
 
 export default function Progress({ navigate }) {
   const { t, state, dispatch } = useApp()
   const overall = overallStats(state.items)
   const [confirming, setConfirming] = useState(false)
   const [resetFlash, setResetFlash] = useState(false)
+  const [backupMsg, setBackupMsg] = useState(null) // { kind: 'ok'|'err', text }
+  const fileRef = useRef(null)
+
+  const flashBackup = (kind, text) => {
+    setBackupMsg({ kind, text })
+    setTimeout(() => setBackupMsg(null), 2400)
+  }
+
+  const onExport = () => {
+    downloadBackup(state)
+  }
+
+  const onImportClick = () => {
+    fileRef.current?.click()
+  }
+
+  const onImportFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parseBackup(text)
+      if (parsed.items.length === 0 && !parsed.vision?.ideal) {
+        flashBackup('err', t.backup.importEmpty)
+        return
+      }
+      if (state.items.length > 0 && !window.confirm(t.backup.importConfirm)) return
+      dispatch({ type: 'LOAD_STATE', payload: parsed })
+      flashBackup('ok', t.backup.importDone)
+    } catch {
+      flashBackup('err', t.backup.importBadFile)
+    }
+  }
 
   const keptWithPlace = state.items.filter((i) => i.status === 'kept' && i.place).length
   const keptTotal = overall.kept
@@ -87,6 +122,34 @@ export default function Progress({ navigate }) {
           </section>
         </>
       )}
+
+      <section className="card p-4">
+        <h3 className="font-medium text-sm">{t.backup.title}</h3>
+        <div className="mt-3 space-y-2">
+          <button onClick={onExport} className="btn-ghost w-full justify-between">
+            <span>↓ {t.backup.export}</span>
+            <span className="text-xs text-ink/50">JSON</span>
+          </button>
+          <p className="text-xs text-ink/50 px-1">{t.backup.exportHint}</p>
+          <button onClick={onImportClick} className="btn-ghost w-full justify-between">
+            <span>↑ {t.backup.import}</span>
+            <span className="text-xs text-ink/50">JSON</span>
+          </button>
+          <p className="text-xs text-ink/50 px-1">{t.backup.importHint}</p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={onImportFile}
+            className="hidden"
+          />
+        </div>
+        {backupMsg && (
+          <p className={`text-xs mt-2 ${backupMsg.kind === 'ok' ? 'text-sage' : 'text-rose'}`}>
+            {backupMsg.text}
+          </p>
+        )}
+      </section>
 
       <section className="pt-2">
         {!confirming ? (

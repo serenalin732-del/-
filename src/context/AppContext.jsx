@@ -45,6 +45,12 @@ function reducer(state, action) {
       }
     case 'DELETE_ITEM':
       return { ...state, items: state.items.filter((i) => i.id !== action.id) }
+    case 'LOAD_STATE': {
+      // Merge: caller's payload overrides, but keep current lang unless explicitly provided.
+      const next = { ...initialState, ...action.payload }
+      if (!action.payload?.lang) next.lang = state.lang
+      return next
+    }
     case 'RESET':
       return { ...initialState, lang: state.lang }
     default:
