@@ -2,7 +2,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// GitHub Pages serves this repo under https://<user>.github.io/-/
+// so all asset paths need to be prefixed with `/-/`.
+// Locally and during tests the base is just `/`.
+const isProd = process.env.NODE_ENV === 'production' || process.env.GITHUB_ACTIONS === 'true'
+
 export default defineConfig({
+  base: isProd ? '/-/' : '/',
   plugins: [
     react(),
     VitePWA({
@@ -16,7 +22,8 @@ export default defineConfig({
         background_color: '#fdfaf6',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: './',
+        scope: './',
         icons: [
           {
             src: 'icon-192.svg',
@@ -35,3 +42,4 @@ export default defineConfig({
     })
   ]
 })
+
