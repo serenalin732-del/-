@@ -2,42 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html, body, #root {
-    @apply h-full;
-  }
-  body {
-    @apply bg-cream text-ink font-sans antialiased;
-    -webkit-tap-highlight-color: transparent;
-  }
-  button {
-    @apply select-none;
-  }
+html, body, #root {
+  height: 100%;
 }
 
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
-  }
-  .btn-primary {
-    @apply btn bg-rose text-cream shadow-sm hover:bg-rose/90;
-  }
-  .btn-ghost {
-    @apply btn bg-mist text-ink hover:bg-mist/80;
-  }
-  .btn-outline {
-    @apply btn border border-ink/15 bg-transparent hover:bg-mist/60;
-  }
-  .card {
-    @apply rounded-2xl bg-white/70 backdrop-blur border border-ink/5 shadow-sm;
-  }
-  .chip {
-    @apply inline-flex items-center gap-1 rounded-full bg-mist px-3 py-1 text-xs text-ink/70;
-  }
-  .safe-bottom {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  }
-  .safe-top {
-    padding-top: max(0.75rem, env(safe-area-inset-top));
-  }
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #fafafa;
+}
+
+/* hide default number-input spinners on iPad keyboards */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }

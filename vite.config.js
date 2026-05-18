@@ -13,15 +13,15 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'icon-192.svg', 'icon-512.svg'],
       manifest: {
-        name: 'Spark Joy 怦然心动整理',
-        short_name: 'Spark Joy',
-        description: 'A KonMari-inspired decluttering helper / 近藤麻理惠式整理引导',
-        theme_color: '#f5d0c5',
-        background_color: '#fdfaf6',
+        name: '一日五色表 · Five Color Planner',
+        short_name: '五色表',
+        description: '基于叶老师智慧时间法的个人打卡与记录工具',
+        theme_color: '#1a1a1a',
+        background_color: '#fafafa',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         start_url: './',
         scope: './',
         icons: [
@@ -42,4 +42,3 @@ export default defineConfig({
     })
   ]
 })
-
