@@ -8,6 +8,7 @@ import Summary from './screens/Summary.jsx'
 import Settings from './screens/Settings.jsx'
 import { activeReminders } from './utils/reminders.js'
 import { benefitState } from './utils/benefits.js'
+import { pendingUpdatesForCards } from './utils/catalog.js'
 import { surfaceReminders } from './utils/notifications.js'
 
 const TABS = ['dashboard', 'cards', 'points', 'summary', 'settings']
@@ -16,6 +17,11 @@ const ICONS = { dashboard: '🏠', cards: '💳', points: '⭐', summary: '📊'
 export default function App() {
   const { state, t, fmt, lang } = useApp()
   const [view, setView] = useState({ tab: 'dashboard', cardId: null })
+
+  // Keep the document language in sync for a11y / correct font rendering.
+  useEffect(() => {
+    if (typeof document !== 'undefined') document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+  }, [lang])
 
   const navigate = (tab, cardId = null) => {
     setView({ tab, cardId })
@@ -38,7 +44,12 @@ export default function App() {
       const card = state.cards.find((c) => c.id === r.cardId)
       return b && !benefitState(b, state.claims, now, card?.openedDate).used
     })
+    const pending = pendingUpdatesForCards(state.cards, state.benefits)
+    if (pending.length > 0) reminders.push({ kind: 'update', id: 'catalog-updates', count: pending.length, daysUntil: 0 })
     surfaceReminders(reminders, (r) => {
+      if (r.kind === 'update') {
+        return { title: t.updates.title, body: fmt(t.updates.banner, { n: r.count }) }
+      }
       const card = state.cards.find((c) => c.id === r.cardId)
       const name = card ? card.nickname || card.name : ''
       if (r.kind === 'payment') {

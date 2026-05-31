@@ -180,9 +180,10 @@ export function instantiateTemplate(templateId, overrides = {}) {
     annualFee: tpl.annualFee,
     openedDate: overrides.openedDate || null,
     multipliers: tpl.multipliers || [],
+    catalogVersionSeen: tpl.version || 1,
     payment: overrides.payment || { dueDay: null, statementDay: null, remindDaysBefore: 3, overdueReminder: true }
   }
-  const benefits = (tpl.benefits || []).map((b) => ({ id: uid(), cardId, remindDaysBefore: 7, ...b }))
+  const benefits = (tpl.benefits || []).map((b) => ({ id: uid(), cardId, remindDaysBefore: 7, templateKey: b.key, ...b }))
   return { card, benefits }
 }
 

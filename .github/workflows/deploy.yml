@@ -1,10 +1,12 @@
 name: Deploy to GitHub Pages
 
+# Pages now serves the PerkPilot app (perk-pilot/). The root "Spark Joy" app
+# stays in the repo but is no longer the deployed site.
 on:
   push:
     branches:
       - main
-      - claude/decluttering-helper-app-1bjoK
+      - claude/quirky-rubin-RjvaY
   workflow_dispatch:
 
 permissions:
@@ -15,6 +17,10 @@ permissions:
 concurrency:
   group: pages
   cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: perk-pilot
 
 jobs:
   build:
@@ -28,6 +34,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: perk-pilot/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -44,7 +51,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: perk-pilot/dist
 
   deploy:
     needs: build

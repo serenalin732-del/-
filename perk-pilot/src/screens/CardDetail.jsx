@@ -3,10 +3,13 @@ import { useApp } from '../context/AppContext.jsx'
 import { benefitState, claimKey, cardUtilization } from '../utils/benefits.js'
 import { periodLabel } from '../utils/cycles.js'
 import { paymentStatus, benefitExpiry } from '../utils/reminders.js'
+import { cardHasNewerCatalog, diffCardAgainstTemplate } from '../utils/catalog.js'
+import { findTemplate } from '../data/cardLibrary.js'
 import { ProgressBar, Badge, money, Field } from '../components/ui.jsx'
 import Modal from '../components/Modal.jsx'
 import BenefitForm from '../components/BenefitForm.jsx'
 import CardForm from '../components/CardForm.jsx'
+import UpdatesReview from '../components/UpdatesReview.jsx'
 
 export default function CardDetail({ cardId, navigate }) {
   const { state, dispatch, t, fmt, lang } = useApp()
@@ -14,6 +17,7 @@ export default function CardDetail({ cardId, navigate }) {
   const card = state.cards.find((c) => c.id === cardId)
   const [editingCard, setEditingCard] = useState(false)
   const [benefitModal, setBenefitModal] = useState(null) // {benefit} | {} for new | null
+  const [reviewing, setReviewing] = useState(false)
 
   if (!card) {
     return (
@@ -27,6 +31,10 @@ export default function CardDetail({ cardId, navigate }) {
   const u = cardUtilization(card, state.benefits, state.claims, now)
   const ps = paymentStatus(card, now)
   const person = state.people.find((p) => p.id === card.personId)
+
+  const template = findTemplate(card.templateId)
+  const cardDiff = template && cardHasNewerCatalog(card, template) ? diffCardAgainstTemplate(card, state.benefits, template) : null
+  const hasUpdate = cardDiff?.hasChanges
 
   function saveBenefit(data) {
     if (benefitModal?.benefit) {
@@ -70,6 +78,16 @@ export default function CardDetail({ cardId, navigate }) {
           </div>
         )}
       </div>
+
+      {hasUpdate && (
+        <button
+          onClick={() => setReviewing(true)}
+          className="w-full rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 flex items-center justify-between text-left"
+        >
+          <span className="text-sm text-gold">🔔 {t.updates.title}</span>
+          <span className="chip bg-gold/20 text-gold">{t.updates.review}</span>
+        </button>
+      )}
 
       {/* Payment */}
       {ps && (
@@ -175,6 +193,10 @@ export default function CardDetail({ cardId, navigate }) {
         }
       >
         {benefitModal && <BenefitForm benefit={benefitModal.benefit} onSave={saveBenefit} />}
+      </Modal>
+
+      <Modal open={reviewing && hasUpdate} onClose={() => setReviewing(false)} title={t.updates.title}>
+        {hasUpdate && <UpdatesReview pending={[{ card, template, diff: cardDiff }]} onDone={() => setReviewing(false)} />}
       </Modal>
     </div>
   )

@@ -30,6 +30,11 @@ summary.
 - **Payment reminders**: statement + due day, custom "remind N days before",
   and overdue flagging. Uses the device's real local date.
 - **Benefit-expiry reminders**: warns when an unused perk's window is closing.
+- **Catalog updates**: the bundled benefit catalog is versioned. When it's
+  updated, cards built from a template show a 🔔 banner; you review a diff
+  (new perks / changed values / removed perks / fee changes) and **confirm each
+  item** before anything is applied — nothing changes silently. (There is no
+  public issuer API, so this is a curated catalog, not a live scrape.)
 - **Device notifications**: opt-in browser notifications (best when installed to
   the home screen).
 - **Points**: log spend with category/multiplier, attach a receipt photo, and
@@ -44,11 +49,19 @@ summary.
 - **Phase 2 — AI receipt reading** for points (upload a statement/receipt; auto
   categorize spend and earned points). Needs a Claude API key wired through a
   small serverless endpoint. Manual entry is the current fallback.
-- **Phase 3 — Cloud accounts + sync + reliable push** via Supabase (auth,
-  Postgres with row-level security, multi-device sync, sharing with family/
-  friends, Web Push). See `src/utils/sync.js` for the planned interface and
-  schema. To enable: create a Supabase project, set `VITE_SUPABASE_URL` and
-  `VITE_SUPABASE_ANON_KEY`, and implement the documented stubs.
+- **Phase 3 — Cloud accounts + sync** via Supabase (auth, Postgres with
+  row-level security, multi-device sync, sharing with family/friends).
+  **Scaffolded and ready to turn on**: SQL migration in
+  `supabase/migrations/0001_init.sql`, client integration in
+  `src/utils/sync.js`, and a sign-in / sync panel in Settings. To enable, follow
+  [`supabase/README.md`](./supabase/README.md): create a project, run the
+  migration, and set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`. Reliable
+  Web Push reminders can be layered on once Supabase is connected.
+
+## Deploy
+GitHub Pages serves this app via `.github/workflows/deploy.yml` (build + test on
+push to `main`). It deploys `perk-pilot/dist`. Once live, open it on your phone
+and use **Add to Home Screen** to install it like a native app.
 
 ## Honest constraints
 - Banks don't expose public APIs for perk usage, so true *fully-automatic*

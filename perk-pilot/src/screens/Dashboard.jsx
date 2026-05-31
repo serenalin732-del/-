@@ -1,13 +1,24 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext.jsx'
 import { cardUtilization, cardYearSummary, benefitState as bState } from '../utils/benefits.js'
 import { activeReminders } from '../utils/reminders.js'
+import { pendingUpdatesForCards } from '../utils/catalog.js'
 import { ProgressBar, Badge, money, EmptyState } from '../components/ui.jsx'
+import Modal from '../components/Modal.jsx'
+import UpdatesReview from '../components/UpdatesReview.jsx'
 
 export default function Dashboard({ navigate }) {
   const { state, t, fmt, lang } = useApp()
   const now = new Date()
   const { cards, benefits, claims } = state
+  const [reviewing, setReviewing] = useState(false)
+
+  const pending = useMemo(() => pendingUpdatesForCards(cards, benefits), [cards, benefits])
+
+  // Close the review sheet once every card's updates have been handled.
+  useEffect(() => {
+    if (reviewing && pending.length === 0) setReviewing(false)
+  }, [reviewing, pending.length])
 
   const totals = useMemo(() => {
     let captured = 0
@@ -67,6 +78,16 @@ export default function Dashboard({ navigate }) {
     <div className="p-4 space-y-4">
       <Header t={t} />
 
+      {pending.length > 0 && (
+        <button
+          onClick={() => setReviewing(true)}
+          className="w-full rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 flex items-center justify-between text-left"
+        >
+          <span className="text-sm text-gold">🔔 {fmt(t.updates.banner, { n: pending.length })}</span>
+          <span className="chip bg-gold/20 text-gold">{t.updates.review}</span>
+        </button>
+      )}
+
       <div className="card-surface p-4">
         <div className="flex items-baseline justify-between mb-2">
           <span className="text-sm text-mist/60">{t.dashboard.capturedThisCycle}</span>
@@ -112,6 +133,10 @@ export default function Dashboard({ navigate }) {
           })
         )}
       </Section>
+
+      <Modal open={reviewing && pending.length > 0} onClose={() => setReviewing(false)} title={t.updates.title}>
+        <UpdatesReview pending={pending} onDone={() => {}} />
+      </Modal>
     </div>
   )
 }

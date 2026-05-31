@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../context/AppContext.jsx'
 import { Field } from '../components/ui.jsx'
 import { downloadBackup, parseBackup, readFileText } from '../utils/backup.js'
 import { getPermission, requestPermission } from '../utils/notifications.js'
-import { syncStatus } from '../utils/sync.js'
+import { syncStatus, getSession, signIn, signOut, pushState, pullState } from '../utils/sync.js'
 
 export default function Settings() {
   const { state, dispatch, t, lang } = useApp()
@@ -88,10 +88,12 @@ export default function Settings() {
       </Block>
 
       <Block title={t.settings.sync}>
-        <div className="text-sm text-mist/70 mb-1">
-          {sync.configured ? 'Supabase ✓' : t.settings.syncNotConfigured}
-        </div>
-        <p className="text-[11px] text-mist/40">{t.settings.syncHint}</p>
+        {sync.configured ? <SyncPanel /> : (
+          <>
+            <div className="text-sm text-mist/70 mb-1">{t.settings.syncNotConfigured}</div>
+            <p className="text-[11px] text-mist/40">{t.settings.syncHint}</p>
+          </>
+        )}
       </Block>
 
       <button
@@ -102,6 +104,66 @@ export default function Settings() {
       >
         {t.settings.reset}
       </button>
+    </div>
+  )
+}
+
+function SyncPanel() {
+  const { state, dispatch, t } = useApp()
+  const [session, setSession] = useState(null)
+  const [email, setEmail] = useState('')
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    getSession().then((s) => alive && setSession(s))
+    return () => { alive = false }
+  }, [])
+
+  async function onSendLink(e) {
+    e.preventDefault()
+    const res = await signIn(email.trim())
+    setMsg(res.ok ? t.settings.syncLinkSent : `⚠ ${res.reason}`)
+  }
+  async function onPush() {
+    const res = await pushState(state)
+    setMsg(res.ok ? t.settings.syncPushed : `⚠ ${res.reason}`)
+  }
+  async function onPull() {
+    const res = await pullState()
+    if (res.ok && res.data) {
+      dispatch({ type: 'LOAD_STATE', payload: res.data })
+      setMsg(t.settings.syncPulled)
+    } else {
+      setMsg(`⚠ ${res.reason || 'no data'}`)
+    }
+  }
+  async function onSignOut() {
+    await signOut()
+    setSession(null)
+    setMsg('')
+  }
+
+  if (!session) {
+    return (
+      <form onSubmit={onSendLink}>
+        <Field label={t.settings.syncEmail}>
+          <input className="field-input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        </Field>
+        <button className="btn-primary w-full" type="submit">{t.settings.syncSendLink}</button>
+        {msg && <p className="text-[11px] text-mist/50 mt-2">{msg}</p>}
+      </form>
+    )
+  }
+  return (
+    <div>
+      <div className="text-sm text-mist/70 mb-3">{t.settings.syncSignedInAs} <span className="text-mist">{session.user?.email}</span></div>
+      <div className="flex gap-2">
+        <button className="btn-primary flex-1" onClick={onPush}>{t.settings.syncPush}</button>
+        <button className="btn-ghost flex-1" onClick={onPull}>{t.settings.syncPull}</button>
+      </div>
+      <button className="btn-ghost w-full mt-2" onClick={onSignOut}>{t.settings.syncSignOut}</button>
+      {msg && <p className="text-[11px] text-mist/50 mt-2">{msg}</p>}
     </div>
   )
 }
