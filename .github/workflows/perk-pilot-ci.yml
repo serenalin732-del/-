@@ -1,0 +1,44 @@
+name: PerkPilot CI
+
+# Runs tests + production build for the perk-pilot/ project only.
+# Independent from the root "Deploy to GitHub Pages" workflow (Spark Joy).
+on:
+  push:
+    paths:
+      - 'perk-pilot/**'
+      - '.github/workflows/perk-pilot-ci.yml'
+  pull_request:
+    paths:
+      - 'perk-pilot/**'
+      - '.github/workflows/perk-pilot-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: perk-pilot
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: perk-pilot/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
