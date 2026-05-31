@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="108" fill="#0f766e"/>
+  <rect x="90" y="155" width="332" height="214" rx="32" fill="#0b1120"/>
+  <rect x="90" y="208" width="332" height="42" fill="#5eead4"/>
+  <circle cx="352" cy="315" r="34" fill="#f4c430"/>
+  <text x="256" y="458" font-family="Inter, sans-serif" font-size="58" font-weight="700" fill="#ffffff" text-anchor="middle">PerkPilot</text>
+</svg>
