@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-      - claude/quirky-rubin-RjvaY
   workflow_dispatch:
 
 permissions:
