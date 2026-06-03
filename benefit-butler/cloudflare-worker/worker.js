@@ -675,8 +675,8 @@ async function sendDueReminders(env) {
   const [settingsRows, existingLogs, cards, benefits] = await Promise.all([
     supabase(env, "automation_settings?select=user_id,email_reminder_enabled,default_reminder_email,payment_reminder_days,benefit_reminder_days&limit=1000"),
     supabase(env, `reminder_logs?select=user_id,recipient,subject,created_at&created_at=gte.${today}T00:00:00Z&created_at=lt.${tomorrow}T00:00:00Z&limit=2000`),
-    supabase(env, "cards?select=id,user_id,name,nickname,payment_due_day,reminder_days_before,reminder_channel,reminder_email&limit=1000"),
-    supabase(env, "benefits?select=id,user_id,card_id,name,total_value,used_value,cycle_type,cycle_end,tracking_mode&limit=2000")
+    supabase(env, "cards?select=id,user_id,card_name,nickname,due_day,reminder_days_before,reminder_channel,reminder_email,anniversary_date&limit=1000"),
+    supabase(env, "benefits?select=id,user_id,card_id,name,total_value,used_value,cycle,cycle_end,tracking_mode&limit=2000")
   ]);
   const settingsByUser = new Map((settingsRows || []).map(row => [row.user_id, row]));
   const sentKeys = new Set((existingLogs || []).map(row => `${row.user_id}:${row.recipient}:${row.subject}`));
@@ -686,25 +686,40 @@ async function sendDueReminders(env) {
     const settings = settingsByUser.get(card.user_id) || {};
     if (settings.email_reminder_enabled === false) continue;
     if (!["email", "both"].includes(card.reminder_channel || "calendar")) continue;
-    if (!card.reminder_email || !card.payment_due_day) continue;
-    const dueDate = nextMonthlyDueDate(Number(card.payment_due_day || 1));
+    // Fall back to the account-wide reminder email when the card has none.
+    const to = card.reminder_email || settings.default_reminder_email;
+    if (!to || !card.due_day) continue;
+    const label = card.nickname || card.card_name;
+    const dueDate = dueDateThisMonth(Number(card.due_day), today);
     const reminderDays = Number(card.reminder_days_before ?? settings.payment_reminder_days ?? 7);
-    const scheduledFor = addDays(dueDate, -reminderDays);
-    if (scheduledFor !== today) continue;
-    const subject = `Payment reminder: ${card.nickname || card.name}`;
-    const text = `Payment reminder for ${card.nickname || card.name}. Due date: ${dueDate}. Reminder timing: ${reminderDays} day(s) before.`;
-    const logKey = `${card.user_id}:${card.reminder_email}:${subject}`;
+    const diff = daysBetweenDates(today, dueDate); // dueDate - today, in whole days
+    // Stage the nudge: a window before (catches up if a cron run was missed),
+    // the due day itself, and a single overdue nudge the day after.
+    let stage = "";
+    if (diff > 0 && diff <= reminderDays) stage = "upcoming";
+    else if (diff === 0) stage = "due";
+    else if (diff === -1) stage = "overdue";
+    if (!stage) continue;
+    const subject =
+      stage === "overdue" ? `Payment overdue: ${label}`
+      : stage === "due" ? `Payment due today: ${label}`
+      : `Payment reminder: ${label}`;
+    const text =
+      stage === "overdue" ? `Payment for ${label} was due ${dueDate} and may be overdue. Please confirm it is paid.`
+      : stage === "due" ? `Payment for ${label} is due today (${dueDate}).`
+      : `Payment for ${label} is due ${dueDate}, in ${diff} day${diff === 1 ? "" : "s"}.`;
+    const logKey = `${card.user_id}:${to}:${subject}`;
     if (sentKeys.has(logKey)) continue;
-    const providerResponse = await sendEmail(env, card.reminder_email, subject, text);
+    const providerResponse = await sendEmail(env, to, subject, text);
     await supabase(env, "reminder_logs", {
       method: "POST",
       body: JSON.stringify({
         user_id: card.user_id,
         channel: "email",
-        recipient: card.reminder_email,
+        recipient: to,
         subject,
         status: "sent",
-        provider_response: { ...providerResponse, type: "payment", cardId: card.id, scheduledFor: today },
+        provider_response: { ...providerResponse, type: "payment", stage, cardId: card.id, scheduledFor: today },
         sent_at: new Date().toISOString()
       })
     });
@@ -720,14 +735,15 @@ async function sendDueReminders(env) {
     if (!to) continue;
     const remaining = Number(benefit.total_value || 0) - Number(benefit.used_value || 0);
     if (remaining <= 0) continue;
-    const endDate = benefit.cycle_end || benefitCycleEndDate(benefit.cycle_type);
+    const card = cardsById.get(benefit.card_id);
+    const endDate = benefit.cycle_end || benefitCycleEndDate(benefit.cycle, card, today);
     if (!endDate) continue;
     const reminderDays = Number(settings.benefit_reminder_days ?? 14);
-    const scheduledFor = addDays(endDate, -reminderDays);
-    if (scheduledFor !== today) continue;
-    const card = cardsById.get(benefit.card_id);
+    const diff = daysBetweenDates(today, endDate); // endDate - today, in whole days
+    // Remind through the run-up to expiry (and catch up if a cron run was missed).
+    if (!(diff >= 0 && diff <= reminderDays)) continue;
     const subject = `Benefit reminder: ${benefit.name}`;
-    const text = `Benefit reminder for ${benefit.name}${card ? ` on ${card.nickname || card.name}` : ""}. Estimated cycle end: ${endDate}. Remaining tracked value: $${Math.max(0, Math.round(remaining))}.`;
+    const text = `Benefit reminder for ${benefit.name}${card ? ` on ${card.nickname || card.card_name}` : ""}. Cycle ends ${endDate} (in ${diff} day${diff === 1 ? "" : "s"}). Remaining tracked value: $${Math.max(0, Math.round(remaining))}.`;
     const logKey = `${benefit.user_id}:${to}:${subject}`;
     if (sentKeys.has(logKey)) continue;
     const providerResponse = await sendEmail(env, to, subject, text);
@@ -782,26 +798,44 @@ function addDays(dateText, days) {
   return date.toISOString().slice(0, 10);
 }
 
-function nextMonthlyDueDate(day) {
-  const now = new Date();
-  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-  const due = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.min(Math.max(day, 1), lastDay)));
-  if (due.toISOString().slice(0, 10) < now.toISOString().slice(0, 10)) {
-    due.setUTCMonth(due.getUTCMonth() + 1);
-    const nextLastDay = new Date(Date.UTC(due.getUTCFullYear(), due.getUTCMonth() + 1, 0)).getUTCDate();
-    due.setUTCDate(Math.min(Math.max(day, 1), nextLastDay));
-  }
-  return due.toISOString().slice(0, 10);
-}
-
-function benefitCycleEndDate(cycleType = "") {
-  const now = new Date();
+// This month's payment due date (clamped to the last day for short months).
+function dueDateThisMonth(day, todayText) {
+  const now = new Date(`${todayText}T00:00:00Z`);
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth();
-  if (cycleType === "monthly") return new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10);
-  if (cycleType === "quarterly") return new Date(Date.UTC(year, Math.floor(month / 3) * 3 + 3, 0)).toISOString().slice(0, 10);
-  if (cycleType === "semiannual") return new Date(Date.UTC(year, month < 6 ? 5 : 11, month < 6 ? 30 : 31)).toISOString().slice(0, 10);
-  if (cycleType === "calendar_year" || cycleType === "calendar") return `${year}-12-31`;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const d = Math.min(Math.max(Number(day) || 1, 1), lastDay);
+  return new Date(Date.UTC(year, month, d)).toISOString().slice(0, 10);
+}
+
+// Whole-day difference (b - a) between two YYYY-MM-DD strings.
+function daysBetweenDates(aText, bText) {
+  const a = new Date(`${aText}T00:00:00Z`);
+  const b = new Date(`${bText}T00:00:00Z`);
+  return Math.round((b - a) / 86400000);
+}
+
+// Estimated end date of the benefit's current cycle. Supports calendar cycles
+// and (using the card's anniversary date) cardmember-year cycles. Accepts both
+// the strict schema enum values and the app's shorthand spellings.
+function benefitCycleEndDate(cycle = "", card = null, todayText = new Date().toISOString().slice(0, 10)) {
+  const now = new Date(`${todayText}T00:00:00Z`);
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  if (cycle === "monthly") return new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10);
+  if (cycle === "quarterly") return new Date(Date.UTC(year, Math.floor(month / 3) * 3 + 3, 0)).toISOString().slice(0, 10);
+  if (cycle === "semiannual") return new Date(Date.UTC(year, month < 6 ? 6 : 12, 0)).toISOString().slice(0, 10);
+  if (cycle === "calendar_year" || cycle === "calendar") return `${year}-12-31`;
+  if (cycle === "anniversary_year" || cycle === "anniversary") {
+    if (!card?.anniversary_date) return "";
+    const ann = new Date(`${card.anniversary_date}T00:00:00Z`);
+    let next = new Date(Date.UTC(year, ann.getUTCMonth(), ann.getUTCDate()));
+    if (next.toISOString().slice(0, 10) <= todayText) {
+      next = new Date(Date.UTC(year + 1, ann.getUTCMonth(), ann.getUTCDate()));
+    }
+    next.setUTCDate(next.getUTCDate() - 1); // day before next anniversary = end of current year
+    return next.toISOString().slice(0, 10);
+  }
   return "";
 }
 
