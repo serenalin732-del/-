@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>&#34221;&#21345;&#31649;&#23478;</title>
+  <meta name="theme-color" content="#063f44">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section class="auth-gate" id="authGate">
+    <div class="auth-hero">
+      <div class="brand auth-brand">
+        <img class="brand-mark logo-image" src="icons/sheep-logo-clean.png?v=4" alt="&#34221;&#21345;&#31649;&#23478; logo">
+        <div>
+          <strong class="brand-name">&#34221;&#21345;&#31649;&#23478;</strong>
+          <span>Benefit Butler</span>
+        </div>
+      </div>
+
+      <div class="auth-copy">
+        <h1>&#25226;&#27599;&#24352;&#39640;&#24180;&#36153;&#21345;&#65292;<br>&#31649;&#29702;&#25104;&#19968;&#24352;<br>&#28165;&#26970;&#30340;<em>&#36164;&#20135;&#34920;</em>&#12290;</h1>
+        <span class="auth-accent-line"></span>
+        <p>&#38598;&#20013;&#36861;&#36394;&#36824;&#27454;&#26085;&#26399;&#12289;&#24180;&#24230;&#31119;&#21033;&#12289;&#31215;&#20998;&#26469;&#28304;&#21644;&#32493;&#21345;&#20215;&#20540;&#65292;&#21482;&#26377;&#30331;&#24405;&#21518;&#25165;&#20250;&#21152;&#36733;&#20010;&#20154;&#36164;&#26009;&#65292;&#25130;&#22270;&#19982;&#36134;&#21333;&#20445;&#23384;&#22312;&#31169;&#26377;&#31354;&#38388;&#20013;&#12290;</p>
+      </div>
+
+      <div class="auth-visual" aria-hidden="true">
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="card-stage"></div>
+        <div class="premium-card card-back">
+          <span>VIP</span>
+          <strong>&bull;&bull;&bull;&bull; 8888</strong>
+        </div>
+        <div class="premium-card card-front">
+          <span>PREMIUM</span>
+          <i></i>
+          <strong>&bull;&bull;&bull;&bull; 6093</strong>
+        </div>
+        <div class="value-panel">
+          <span>&#24180;&#24230;&#20215;&#20540;</span>
+          <strong>&#165;12,680</strong>
+          <b></b>
+        </div>
+      </div>
+
+      <div class="auth-points">
+        <span>Private by default</span>
+        <span>Annual value review</span>
+        <span>Benefit tracking</span>
+      </div>
+    </div>
+
+    <div class="auth-panel">
+      <div class="auth-card">
+        <div class="auth-tabs" role="tablist" aria-label="&#36134;&#25143;&#20837;&#21475;">
+          <button class="auth-tab active" type="button" data-auth-mode="login">&#30331;&#24405;</button>
+          <button class="auth-tab" type="button" data-auth-mode="register">&#27880;&#20876;</button>
+          <button class="auth-tab" type="button" data-auth-mode="reset">&#24536;&#35760;&#23494;&#30721;</button>
+        </div>
+
+        <form class="auth-mode active" id="loginForm">
+          <h2>&#27426;&#36814;&#22238;&#26469;</h2>
+          <p>&#30331;&#24405;&#21518;&#21516;&#27493;&#20320;&#30340;&#20449;&#29992;&#21345;&#12289;&#31119;&#21033;&#21644;&#31215;&#20998;&#35760;&#24405;&#12290;</p>
+          <label>&#37038;&#31665;
+            <input id="loginEmailInput" type="email" autocomplete="email" placeholder="&#35831;&#36755;&#20837;&#37038;&#31665;&#22320;&#22336;" required>
+          </label>
+          <label>&#23494;&#30721;
+            <input id="loginPasswordInput" type="password" autocomplete="current-password" placeholder="&#35831;&#36755;&#20837;&#23494;&#30721;" required>
+          </label>
+          <div class="auth-row">
+            <label class="remember-check"><input type="checkbox"> &#35760;&#20303;&#25105;</label>
+            <button class="link-button" type="button" data-auth-mode="reset">&#24536;&#35760;&#23494;&#30721;?</button>
+          </div>
+          <button class="primary-button auth-submit" type="submit">&#30331;&#24405;</button>
+          <div class="auth-divider"><span>&#25110;</span></div>
+          <p class="auth-secure">&#25968;&#25454;&#21152;&#23494;&#23384;&#20648;&#65292;&#20445;&#38556;&#20320;&#30340;&#38544;&#31169;&#19982;&#23433;&#20840;</p>
+        </form>
+
+        <form class="auth-mode" id="registerForm">
+          <h2>&#21019;&#24314;&#26032;&#36134;&#25143;</h2>
+          <p>&#31532;&#19968;&#27425;&#20351;&#29992;&#26102;&#27880;&#20876;&#36134;&#25143;&#65292;&#20043;&#21518;&#21487;&#20197;&#22312;&#30005;&#33041;&#21644;&#25163;&#26426;&#21516;&#27493;&#12290;</p>
+          <label>&#37038;&#31665;
+            <input id="registerEmailInput" type="email" autocomplete="email" placeholder="&#35831;&#36755;&#20837;&#37038;&#31665;&#22320;&#22336;" required>
+          </label>
+          <label>&#23494;&#30721;
+            <input id="registerPasswordInput" type="password" autocomplete="new-password" placeholder="&#33267;&#23569; 8 &#20301;&#23494;&#30721;" minlength="8" required>
+          </label>
+          <button class="primary-button auth-submit" type="submit">&#27880;&#20876;</button>
+        </form>
+
+        <form class="auth-mode" id="resetForm">
+          <h2>&#37325;&#35774;&#23494;&#30721;</h2>
+          <p>&#36755;&#20837;&#27880;&#20876;&#37038;&#31665;&#65292;Supabase &#20250;&#21457;&#36865;&#23494;&#30721;&#37325;&#35774;&#37038;&#20214;&#12290;</p>
+          <label>&#37038;&#31665;
+            <input id="resetEmailInput" type="email" autocomplete="email" placeholder="&#35831;&#36755;&#20837;&#37038;&#31665;&#22320;&#22336;" required>
+          </label>
+          <button class="primary-button auth-submit" type="submit">&#21457;&#36865;&#37325;&#35774;&#37038;&#20214;</button>
+        </form>
+
+        <form class="auth-mode" id="updatePasswordForm">
+          <h2>&#35774;&#32622;&#26032;&#23494;&#30721;</h2>
+          <p>&#37038;&#31665;&#38142;&#25509;&#24050;&#30830;&#35748;&#65292;&#35831;&#35774;&#32622;&#19968;&#20010;&#26032;&#30340;&#30331;&#24405;&#23494;&#30721;&#12290;</p>
+          <label>New password
+            <input id="newPasswordInput" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <button class="primary-button auth-submit" type="submit">&#20445;&#23384;&#26032;&#23494;&#30721;</button>
+        </form>
+
+        <div class="auth-message" id="authMessage"></div>
+      </div>
+      <div class="auth-signup-line">
+        <span>&#36824;&#27809;&#26377;&#36134;&#21495;?</span>
+        <button type="button" data-auth-mode="register">&#31435;&#21363;&#27880;&#20876; &#8594;</button>
+      </div>
+    </div>
+  </section>
+
+<div class="app-shell" id="appShell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-mark logo-image" src="icons/sheep-logo-clean.png?v=4" alt="薅卡管家 logo">
+        <div>
+          <strong class="brand-name">薅卡管家</strong>
+          <span>Benefit Butler</span>
+        </div>
+      </div>
+      <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-expanded="false" aria-controls="appNav">Menu</button>
+      <nav class="nav" id="appNav">
+        <button class="nav-item active" data-view="dashboard">首页</button>
+        <button class="nav-item" data-view="cards">卡片</button>
+        <button class="nav-item" data-view="benefits">福利</button>
+        <button class="nav-item" data-view="analysis">AI Advisor</button>
+        <button class="nav-item" data-view="wallet">Wallet Optimizer</button>
+        <button class="nav-item" data-view="reports">History</button>
+        <button class="nav-item" data-view="settings">设置</button>
+      </nav>
+      <div class="sidebar-account">
+        <span>当前账户</span>
+        <strong id="sidebarUserName">未登录</strong>
+        <button class="sidebar-button" id="signOutButton">退出账户</button>
+      </div>
+      <div class="today-box">
+        <span>今天</span>
+        <strong id="todayText"></strong>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">家庭信用卡福利管理</p>
+          <h1>今年有没有把年费薅回来？</h1>
+        </div>
+        <div class="top-actions">
+          <div class="sync-status" id="syncStatus">正在检查登录</div>
+          <select class="language-select" id="languageSelect" aria-label="Language">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+          <button class="ghost-button" id="testSyncButton">测试连接</button>
+          <button class="ghost-button" id="resetDemoButton">恢复示例</button>
+        </div>
+      </header>
+
+      <section class="view active" id="dashboardView">
+        <section class="portfolio-hero panel">
+          <div class="portfolio-hero__copy">
+            <span class="eyebrow" id="portfolioQuestion">AI Executive Summary</span>
+            <h2 id="portfolioHeroTitle">Credit Card Portfolio Health</h2>
+            <div id="portfolioHeroText" class="executive-summary"></div>
+            <div class="portfolio-hero__stats">
+              <span><b id="heroHealthScore">0 / 100</b><small>Portfolio Health Score</small></span>
+              <span><b id="heroRecovered">$0</b><small>Recovered</small></span>
+              <span><b id="heroRemaining">$0</b><small>Remaining credits</small></span>
+              <span><b id="heroAtRisk">$0</b><small>Expiration risk</small></span>
+            </div>
+          </div>
+          <div class="recovery-ring" aria-label="Annual fee recovery progress">
+            <div class="recovery-ring__inner">
+              <strong id="heroRecoveryPercent">0%</strong>
+              <span>Annual Fee Recovery</span>
+            </div>
+          </div>
+        </section>
+        <section class="value-funnel panel">
+          <div class="panel-header">
+            <h2 id="valueFunnelTitle">Value Funnel</h2>
+            <span id="cardPortfolioStatus" class="status-pill"></span>
+          </div>
+          <div id="valueFunnel" class="value-funnel__grid"></div>
+        </section>
+        <div class="metrics-grid" hidden>
+          <article class="metric">
+            <span>总年费</span>
+            <strong id="metricAnnualFee">$0</strong>
+          </article>
+          <article class="metric">
+            <span>已使用福利</span>
+            <strong id="metricUsedValue">$0</strong>
+          </article>
+          <article class="metric">
+            <span>剩余福利</span>
+            <strong id="metricRemainingValue">$0</strong>
+          </article>
+          <article class="metric">
+            <span>积分余额</span>
+            <strong id="metricPoints">0</strong>
+          </article>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel dashboard-expiring-panel" hidden>
+            <div class="panel-header">
+              <h2 id="priorityTitle">Today&apos;s Next Actions</h2>
+              <button class="text-button" data-view-jump="benefits">View benefits</button>
+            </div>
+            <div id="priorityActions" class="stack-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Recent reminders</h2>
+              <button class="text-button" data-view-jump="cards">Manage payments</button>
+            </div>
+            <div id="reminderList" class="stack-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>本月快到期福利</h2>
+              <button class="text-button" data-view-jump="benefits">查看全部</button>
+            </div>
+            <div id="expiringBenefits" class="stack-list"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>卡片价值概览</h2>
+            <span id="portfolioStatus" class="status-pill"></span>
+          </div>
+          <p class="panel-intro" id="cardOverviewIntro">按每张卡计算年费回收率、预计净价值，并给出 KEEP / REVIEW / DOWNGRADE / CANCEL 建议。</p>
+          <div id="cardOverview" class="card-grid"></div>
+        </section>
+      </section>
+
+      <section class="view" id="cardsView">
+        <div class="section-title">
+          <div class="title-line">
+            <h2>我的信用卡</h2>
+            <button class="primary-button" id="openCardFormButton">添加新卡</button>
+          </div>
+          <div>
+            <p>添加卡片、设置账单日和还款提醒，也可以从常见卡模板开始。</p>
+          </div>
+        </div>
+        <div class="cards-workspace">
+          <section class="panel cards-list-panel">
+            <h3>卡片列表</h3>
+            <div id="cardsList" class="stack-list"></div>
+          </section>
+
+          <aside class="card-drawer" id="cardFormDrawer" hidden>
+            <div class="drawer-header">
+              <h3 id="cardDrawerTitle">添加 / 编辑信用卡</h3>
+              <button class="ghost-button" type="button" id="closeCardFormButton">完成</button>
+            </div>
+            <form id="cardForm" class="form-grid">
+              <input type="hidden" id="cardId">
+              <label>卡片模板
+                <select id="templateSelect"></select>
+              </label>
+              <label>银行
+                <input id="issuerInput" required placeholder="Amex, Capital One, Chase">
+              </label>
+              <label>卡片名称
+                <input id="cardNameInput" required placeholder="Amex Platinum">
+              </label>
+              <label>昵称
+                <input id="nicknameInput" placeholder="我的主力白金卡">
+              </label>
+              <label>尾号
+                <input id="last4Input" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" placeholder="1234">
+              </label>
+              <label>持卡人
+                <input id="holderInput" placeholder="Serena">
+              </label>
+              <label>年费
+                <input id="annualFeeInput" type="number" min="0" step="1" value="0">
+              </label>
+              <label>还款到期日
+                <input id="dueDayInput" type="number" min="1" max="31" value="15">
+              </label>
+              <label>提前提醒天数
+                <input id="remindDaysInput" type="number" min="0" max="30" value="7">
+              </label>
+              <label>提醒方式
+                <select id="reminderChannelInput">
+                  <option value="calendar">手机/日历提醒</option>
+                  <option value="email">邮件提醒</option>
+                  <option value="both">两者都要</option>
+                </select>
+              </label>
+              <label>提醒邮箱
+                <input id="reminderEmailInput" type="email" placeholder="name@example.com">
+              </label>
+              <label>开卡 / 周年日期
+                <input id="anniversaryInput" type="date">
+              </label>
+              <label class="full-row">备注
+                <textarea id="cardNotesInput" rows="3" maxlength="500" placeholder="比如已开自动还款，或这张卡主要用于旅行"></textarea>
+              </label>
+              <div class="form-actions full-row">
+                <button class="secondary-button" type="button" id="clearCardFormButton">清空</button>
+                <button class="primary-button" type="submit">保存卡片</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="benefitsView">
+        <div class="section-title">
+          <div class="title-line">
+            <h2>福利追踪</h2>
+            <button class="primary-button" id="openBenefitFormButton">添加福利</button>
+          </div>
+          <p>按每月、半年、自然年或会员年追踪福利，新的周期会自动进入下一轮。</p>
+        </div>
+        <div class="benefits-workspace">
+          <section class="panel benefits-list-panel">
+            <div class="priority-band" id="benefitPriorityQueue"></div>
+            <div class="panel-header">
+              <h3>福利清单</h3>
+              <span id="benefitFilterCount" class="status-pill"></span>
+            </div>
+            <div class="filter-strip">
+              <div class="segmented-control" aria-label="福利状态筛选">
+                <button class="segment active" type="button" data-benefit-status="all">全部</button>
+                <button class="segment" type="button" data-benefit-status="open">未薅完</button>
+                <button class="segment" type="button" data-benefit-status="done">已薅完</button>
+              </div>
+              <label class="compact-field">按卡筛选
+                <select id="benefitFilterCardSelect"></select>
+              </label>
+            </div>
+            <div id="benefitsList" class="stack-list"></div>
+          </section>
+
+          <aside class="benefit-drawer" id="benefitFormDrawer" hidden>
+            <div class="drawer-header">
+              <h3 id="benefitDrawerTitle">添加福利</h3>
+              <button class="secondary-button" type="button" id="closeBenefitFormButton">完成</button>
+            </div>
+            <form id="benefitForm" class="form-grid">
+              <input type="hidden" id="benefitId">
+              <label>所属卡片
+                <select id="benefitCardSelect" required></select>
+              </label>
+              <label>福利名称
+                <input id="benefitNameInput" required placeholder="Saks Credit">
+              </label>
+              <label>总价值
+                <input id="benefitValueInput" type="number" min="0" step="1" value="0">
+              </label>
+              <label>已使用
+                <input id="benefitUsedInput" type="number" min="0" step="1" value="0">
+              </label>
+              <label>周期
+                <select id="benefitCycleInput">
+                  <option value="monthly">每月</option>
+                  <option value="quarterly">每季度</option>
+                  <option value="semiannual">半年</option>
+                  <option value="calendar">自然年</option>
+                  <option value="anniversary">会员年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label>到期日
+                <input id="benefitExpiresInput" type="date">
+              </label>
+              <label>是否需要激活
+                <select id="benefitActivationInput">
+                  <option value="no">不需要</option>
+                  <option value="yes">需要</option>
+                </select>
+              </label>
+              <label>追踪方式
+                <select id="benefitTrackingInput">
+                  <option value="auto">自动交易识别</option>
+                  <option value="review">自动建议 + 确认</option>
+                  <option value="manual">手动记录</option>
+                </select>
+              </label>
+              <label class="full-row">使用说明
+                <textarea id="benefitNotesInput" rows="3" maxlength="500" placeholder="例如每半年 Saks $50，需到店或官网消费"></textarea>
+              </label>
+              <div class="form-actions full-row">
+                <button class="secondary-button" type="button" id="clearBenefitFormButton">清空</button>
+                <button class="primary-button" type="submit">保存福利</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <div class="modal-backdrop" id="benefitUseModal" hidden>
+        <form class="modal" id="benefitUseForm">
+          <input type="hidden" id="benefitUseId">
+          <h3 id="benefitUseTitle">记录福利使用</h3>
+          <label>本次使用金额
+            <input id="benefitUseAmountInput" type="number" min="0.01" step="0.01" required>
+          </label>
+          <div class="form-actions">
+            <button class="secondary-button" type="button" id="cancelBenefitUseButton">取消</button>
+            <button class="primary-button" type="submit">保存使用记录</button>
+          </div>
+        </form>
+      </div>
+
+      <section class="view" id="rewardsView">
+        <div class="section-title">
+          <h2>积分与消费分类</h2>
+          <p>记录点数来源，上传截图先进入待识别区，后续可接 OCR 和银行数据同步。</p>
+        </div>
+        <div class="two-column">
+          <section class="panel">
+            <h3>记录积分</h3>
+            <form id="rewardForm" class="form-grid">
+              <input type="hidden" id="rewardId">
+              <label>积分体系
+                <input id="rewardProgramInput" placeholder="Amex MR, Capital One Miles">
+              </label>
+              <label>点数
+                <input id="rewardPointsInput" type="number" required step="1" value="0">
+              </label>
+              <label>来源商户
+                <input id="rewardMerchantInput" placeholder="Whole Foods, Marriott">
+              </label>
+              <label>消费类别
+                <select id="rewardCategoryInput">
+                  <option>买菜</option>
+                  <option>餐厅</option>
+                  <option>加油</option>
+                  <option>酒店</option>
+                  <option>机票</option>
+                  <option>日常消费</option>
+                </select>
+              </label>
+              <label>使用卡片
+                <select id="rewardCardSelect"></select>
+              </label>
+              <label>倍率
+                <input id="rewardMultiplierInput" type="number" min="1" step="0.5" value="1">
+              </label>
+              <label class="full-row">上传截图 / Statement
+                <input id="rewardUploadInput" type="file" accept="image/*,.pdf,.csv,.tsv,.txt">
+              </label>
+              <div class="form-actions full-row">
+                <button class="primary-button" type="submit">保存积分记录</button>
+              </div>
+            </form>
+          </section>
+          <section class="panel">
+            <h3>积分记录</h3>
+            <div class="filter-strip reward-filter-strip">
+              <label class="compact-field">按卡片
+                <select id="rewardFilterCardSelect"></select>
+              </label>
+              <label class="compact-field">消费类别
+                <select id="rewardFilterCategorySelect">
+                  <option value="all">全部类别</option>
+                  <option value="groceries">买菜</option>
+                  <option value="dining">餐厅</option>
+                  <option value="gas_ev">加油 / EV</option>
+                  <option value="hotel">酒店</option>
+                  <option value="flight">机票</option>
+                  <option value="travel">旅行</option>
+                  <option value="services">服务 / 订阅</option>
+                  <option value="everyday">日常</option>
+                </select>
+              </label>
+              <label class="compact-field">状态
+                <select id="rewardFilterStatusSelect">
+                  <option value="all">全部</option>
+                  <option value="optimized">已接近最大化</option>
+                  <option value="optimize">可优化</option>
+                  <option value="uploaded">上传导入</option>
+                  <option value="manual">手动记录</option>
+                </select>
+              </label>
+            </div>
+            <div id="rewardSummary" class="summary-strip reward-summary"></div>
+            <div id="rewardList" class="stack-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="analysisView">
+        <section class="advisor-hero panel">
+          <div>
+            <span class="eyebrow">AI Advisor</span>
+            <h2>Portfolio health</h2>
+          </div>
+          <div class="advisor-score">
+            <strong id="advisorHealthScore">0</strong>
+            <span>/100</span>
+          </div>
+          <div class="advisor-metrics">
+            <span><b id="advisorRecoverableValue">$0</b><small>Potential recoverable value</small></span>
+            <span><b id="advisorExpirationRisk">$0</b><small>Risk of expiration</small></span>
+            <span><b id="advisorActionCount">0</b><small>Suggested actions</small></span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3>Advisor recommendations</h3>
+            <span class="status-pill">Privacy-first</span>
+          </div>
+          <div id="advisorRecommendationList" class="stack-list"></div>
+        </section>
+        <div class="section-title">
+          <h2>Statement 消费分析</h2>
+          <p>上传账单或截图，逐笔判断消费类别、当前用卡回报、是否用对了卡，以及可能错过的点数。</p>
+        </div>
+        <div class="content-grid">
+          <section class="panel">
+            <h3>上传并分析</h3>
+            <form id="statementParseForm" class="form-grid">
+              <label>对应卡片
+                <select id="statementCardSelect"></select>
+              </label>
+              <label>文件
+                <input id="statementFileInput" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/csv,text/tab-separated-values,text/plain,.csv,.tsv,.txt" required>
+              </label>
+              <div class="form-actions full-row">
+                <button class="primary-button" type="submit">上传并分析</button>
+              </div>
+            </form>
+            <div class="stack-list" id="statementParseResult"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h3>用卡判断</h3>
+              <span id="statementAnalysisScore" class="status-pill"></span>
+            </div>
+            <div id="statementOptimizationList" class="stack-list"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3>解析历史</h3>
+            <span id="statementAnalysisCount" class="status-pill"></span>
+          </div>
+          <div id="statementHistoryList" class="stack-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3>回报资料库</h3>
+            <span class="status-pill">用于逐笔对标</span>
+          </div>
+          <div id="rewardRuleLibraryList" class="stack-list"></div>
+        </section>
+      </section>
+
+      <section class="view" id="walletView">
+        <div class="section-title">
+          <h2 id="walletTitle">Wallet Optimizer</h2>
+          <p id="walletIntro">Enter a merchant or category and amount to choose the best card before you pay.</p>
+        </div>
+        <section class="panel">
+          <div class="panel-header">
+            <h3 id="walletPanelTitle">Best card before purchase</h3>
+            <span class="status-pill" id="walletPrivacyPill">No bank login required</span>
+          </div>
+          <form id="walletOptimizerForm" class="form-grid">
+            <label>Merchant / Category
+              <input id="walletMerchantInput" placeholder="Costco, airfare, Marriott">
+            </label>
+            <label>Amount
+              <input id="walletAmountInput" type="number" min="0" step="0.01" value="100">
+            </label>
+            <div class="form-actions full-row">
+              <button class="primary-button" type="submit" id="walletSubmitButton">Find best card</button>
+            </div>
+          </form>
+          <div id="walletOptimizerResult" class="stack-list"></div>
+        </section>
+      </section>
+
+      <section class="view" id="reportsView">
+        <div class="section-title">
+          <h2>年度总结</h2>
+          <p>保留旧年记录，用来判断续卡、降级或关卡。</p>
+        </div>
+        <div class="content-grid">
+          <section class="panel wide">
+            <div class="panel-header">
+              <h3>今年总结</h3>
+              <button class="secondary-button" id="closeYearButton">保存年度档案</button>
+            </div>
+            <div id="yearReport" class="report-block"></div>
+          </section>
+          <section class="panel">
+            <h3>年度档案</h3>
+            <div id="historyList" class="stack-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="settingsView">
+        <div class="section-title">
+          <h2>自动化与 AI</h2>
+          <p>设置自动邮件提醒、AI API、月度总结和 statement 解析。完整 API key 只发送到你的后端 Worker，不保存在浏览器里。</p>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel">
+            <h3>邮件提醒</h3>
+            <form id="automationSettingsForm" class="form-grid">
+              <label>自动邮件提醒
+                <select id="emailReminderEnabledInput">
+                  <option value="yes">开启</option>
+                  <option value="no">关闭</option>
+                </select>
+              </label>
+              <label>默认提醒邮箱
+                <input id="defaultReminderEmailInput" type="email" placeholder="name@example.com">
+              </label>
+              <label>还款提前提醒
+                <input id="paymentReminderDaysInput" type="number" min="0" max="60" value="7">
+              </label>
+              <label>福利到期提前提醒
+                <input id="benefitReminderDaysInput" type="number" min="0" max="120" value="14">
+              </label>
+              <label>每周总结
+                <select id="weeklyDigestInput">
+                  <option value="yes">发送</option>
+                  <option value="no">不发送</option>
+                </select>
+              </label>
+              <label>每月总结
+                <select id="monthlyDigestInput">
+                  <option value="yes">发送</option>
+                  <option value="no">不发送</option>
+                </select>
+              </label>
+              <div class="form-actions full-row">
+                <button class="primary-button" type="submit">保存提醒设置</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h3>AI API Key</h3>
+            <form id="apiKeyForm" class="form-grid">
+              <label>AI Provider
+                <select id="aiProviderInput">
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
+              </label>
+              <label>AI Mode
+                <select id="aiModeInput">
+                  <option value="fast">Fast - GPT-5 mini</option>
+                  <option value="balanced">Balanced - GPT-5 mini</option>
+                  <option value="advisor">Advisor - GPT-5</option>
+                </select>
+              </label>
+              <label>API Key
+                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-...">
+              </label>
+              <label class="full-row">Cloudflare Worker URL
+                <input id="workerUrlInput" type="url" placeholder="https://your-worker.your-subdomain.workers.dev">
+              </label>
+              <div class="form-actions full-row">
+                <button class="primary-button" type="submit">保存并测试 Key</button>
+              </div>
+            </form>
+            <div class="stack-list" id="apiKeyStatusList"></div>
+          </section>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel wide">
+            <div class="panel-header">
+              <h3>AI 总结</h3>
+              <button class="primary-button" id="generateAiSummaryButton">生成当前总结</button>
+            </div>
+            <div id="aiSummaryResult" class="report-block"></div>
+          </section>
+
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
