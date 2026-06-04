@@ -160,8 +160,6 @@
             <option value="zh">中文</option>
             <option value="en">English</option>
           </select>
-          <button class="ghost-button" id="testSyncButton">测试连接</button>
-          <button class="ghost-button" id="resetDemoButton">恢复示例</button>
         </div>
       </header>
 
@@ -365,9 +363,6 @@
               </label>
               <label>总价值
                 <input id="benefitValueInput" type="number" min="0" step="1" value="0">
-              </label>
-              <label>已使用
-                <input id="benefitUsedInput" type="number" min="0" step="1" value="0">
               </label>
               <label>周期
                 <select id="benefitCycleInput">
@@ -703,6 +698,15 @@
               <button class="primary-button" id="generateAiSummaryButton">生成当前总结</button>
             </div>
             <div id="aiSummaryResult" class="report-block"></div>
+          </section>
+
+          <section class="panel">
+            <h3>维护</h3>
+            <p class="item-meta">测试与示例数据等维护操作。</p>
+            <div class="row-actions" style="margin-top:10px;">
+              <button class="ghost-button" id="testSyncButton">测试连接</button>
+              <button class="ghost-button" id="resetDemoButton">恢复示例</button>
+            </div>
           </section>
 
         </div>

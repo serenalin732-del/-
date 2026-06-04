@@ -2032,7 +2032,6 @@ function applyLanguage() {
   setFieldLabel("benefitCardSelect", t("benefitCard"));
   setFieldLabel("benefitNameInput", t("benefitName"));
   setFieldLabel("benefitValueInput", t("totalValue"));
-  setFieldLabel("benefitUsedInput", t("used"));
   setFieldLabel("benefitCycleInput", t("cycle"));
   setFieldLabel("benefitExpiresInput", t("expires"));
   setFieldLabel("benefitActivationInput", t("activation"));
@@ -3020,13 +3019,33 @@ byId("apiKeyForm").addEventListener("submit", async event => {
     }, 12000);
     if (!response.ok) throw new Error(await response.text());
     const payload = await response.json();
-    apiKeyStatus = [{ provider, message: `已保存，末四位 ${payload.lastFour || apiKey.slice(-4)}。完整 key 只保存在 Worker 后端，不会显示在浏览器里。` }];
+    apiKeyStatus = [{ provider, message: `已保存，末四位 ${payload.lastFour || apiKey.slice(-4)}。正在验证可用性...` }];
     saveCachedApiKeyStatus();
     byId("apiKeyInput").value = "";
     saveAutomationPreferences();
     await saveRemoteAutomationSettings();
     renderSettings();
-    setSyncStatus("AI key 已保存");
+    // Real validation: a tiny live call confirms the key + provider + model work.
+    try {
+      const testRes = await fetchWithTimeout(`${workerUrl.replace(/\/$/, "")}/test-key`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ ...aiRequestFields() })
+      }, 25000);
+      const testPayload = await testRes.json().catch(() => ({}));
+      if (testRes.ok && testPayload.ok) {
+        apiKeyStatus = [{ provider, message: `已保存并验证可用（模型 ${testPayload.model}）。完整 key 只在 Worker 后端。` }];
+        setSyncStatus("AI key 已保存并验证可用");
+      } else {
+        apiKeyStatus = [{ provider, message: `已保存，但测试调用失败：${testPayload.error || "请检查模型名 / Base URL / 网络"}` }];
+        setSyncStatus("AI key 已保存，但测试未通过", "warn");
+      }
+    } catch (testError) {
+      apiKeyStatus = [{ provider, message: '已保存（测试调用超时或失败，可稍后用"AI 获取福利"验证）。' }];
+      setSyncStatus("AI key 已保存（测试超时）", "warn");
+    }
+    saveCachedApiKeyStatus();
+    renderSettings();
   } catch (error) {
     apiKeyStatus = [{ provider, message: error.message || "Worker 测试失败。" }];
     renderSettings();
@@ -3805,7 +3824,9 @@ byId("benefitForm").addEventListener("submit", async event => {
     cardId: byId("benefitCardSelect").value,
     name: byId("benefitNameInput").value.trim(),
     value: Number(byId("benefitValueInput").value || 0),
-    used: Number(byId("benefitUsedInput").value || 0),
+    // Usage is logged via "记录使用" / quick-log, not the form, to avoid
+    // double-entry. Keep the existing used amount when editing.
+    used: Number(data.benefits.find(item => item.id === id)?.used || 0),
     cycle: byId("benefitCycleInput").value,
     expires: byId("benefitExpiresInput").value,
     activation: byId("benefitActivationInput").value,
@@ -4059,7 +4080,6 @@ document.addEventListener("click", async event => {
     byId("benefitCardSelect").value = benefit.cardId;
     byId("benefitNameInput").value = benefit.name;
     byId("benefitValueInput").value = benefit.value;
-    byId("benefitUsedInput").value = benefit.used;
     byId("benefitCycleInput").value = benefit.cycle;
     byId("benefitExpiresInput").value = benefit.expires;
     byId("benefitActivationInput").value = benefit.activation;

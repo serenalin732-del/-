@@ -27,6 +27,7 @@ export default {
       if (url.pathname === "/parse-statement" && request.method === "POST") return cors(await parseStatement(request, env), origin);
       if (url.pathname === "/send-reminders" && request.method === "POST") return cors(await sendDueReminders(env), origin);
       if (url.pathname === "/test-email" && request.method === "POST") return cors(await sendTestEmail(request, env), origin);
+      if (url.pathname === "/test-key" && request.method === "POST") return cors(await testKey(request, env), origin);
 
       return cors(json({ ok: false, error: "Not found" }, 404), origin);
     } catch (error) {
@@ -158,6 +159,18 @@ async function getUserApiKey(env, userId, provider = "openai") {
   const rows = await supabase(env, `user_api_keys?user_id=eq.${encodeURIComponent(userId)}&provider=eq.${encodeURIComponent(provider)}&status=eq.active&select=encrypted_key&limit=1`);
   if (!rows?.length) throw new Error("No active API key saved for this user.");
   return decryptText(rows[0].encrypted_key, env.KEY_ENCRYPTION_SECRET);
+}
+
+// Real validation: make a tiny live call with the saved key + chosen
+// provider/model so "test key" actually confirms it works.
+async function testKey(request, env) {
+  const user = await getUser(request, env);
+  const body = await request.json();
+  const cfg = aiConfig(body, env);
+  const apiKey = await getUserApiKey(env, user.id, cfg.provider);
+  const model = resolveModel(cfg, "classify");
+  const out = await callAIText({ env, apiKey, cfg, task: "classify", content: "Reply with the single word: OK", json: false });
+  return json({ ok: true, provider: cfg.provider, model, sample: String(out).slice(0, 60) });
 }
 
 async function suggestCardBenefits(request, env) {
@@ -491,17 +504,29 @@ function parseNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+// Ordered merchant -> category rules. More specific / higher-priority first
+// (e.g. warehouse clubs before the generic grocery rule, since Costco/Sam's
+// usually earn the base rate rather than the grocery multiplier).
+const MERCHANT_CATEGORY = [
+  [/\b(costco|sam'?s club|bj'?s wholesale)\b/, "everyday"],
+  [/\b(whole foods|trader joe'?s?|safeway|kroger|publix|wegmans|aldi|sprouts|h-?e-?b|ralphs|albertsons|food lion|stop & shop|supermarket|grocery)\b/, "groceries"],
+  [/\b(marriott|ritz|sheraton|westin|hilton|hampton inn|hyatt|ihg|holiday inn|wyndham|airbnb|vrbo|hotel|motel|lodging|resort)\b/, "hotel"],
+  [/\b(delta|united airlines|american airlines|southwest|jetblue|alaska air|spirit air|frontier air|hawaiian air|airline|airfare)\b/, "flight"],
+  [/\b(uber(?! eats)|lyft|taxi|transit|metro|parking|amtrak|train|rail|rental car|avis|hertz|enterprise rent|national car|budget rent)\b/, "travel"],
+  [/\b(tesla supercharger|electrify america|evgo|chargepoint|ev charg)\b/, "gas_ev"],
+  [/\b(shell|chevron|exxon|mobil|conoco|sunoco|valero|marathon|speedway|gas station|fuel)\b/, "gas_ev"],
+  [/\b(restaurant|grill|kitchen|cafe|coffee|starbucks|dunkin|panera|chipotle|mcdonald|doordash|uber eats|ubereats|grubhub|seamless|bar|pub|brewery|tavern|diner|bistro|pizzeria)\b/, "dining"],
+  [/\b(netflix|spotify|hulu|disney\+|youtube premium|apple music|paramount|subscription|software|adobe|microsoft 365|openai|anthropic|claude|google one|icloud|dropbox)\b/, "services"],
+  [/\b(walmart|target|amazon|best buy|walgreens|cvs|dollar general)\b/, "everyday"]
+];
+
 function classifyCategory(merchant = "", description = "") {
   const text = `${merchant} ${description}`.toLowerCase();
   if (/payment|autopay|mobile payment|refund|credit received/.test(text)) return "credit";
   if (/interest|fee|finance charge|late charge|cash advance/.test(text)) return "fee";
-  if (/marriott|hilton|hyatt|ihg|hotel|airbnb|lodging|accommodation/.test(text)) return "hotel";
-  if (/delta|united|american airlines|southwest|jetblue|alaska air|airline|flight/.test(text)) return "flight";
-  if (/uber|lyft|taxi|transit|parking|travel|train|rail|rental car|avis|hertz|enterprise/.test(text)) return "travel";
-  if (/whole foods|trader joe|costco|safeway|kroger|grocery|supermarket/.test(text)) return "groceries";
-  if (/restaurant|dining|cafe|coffee|panera|doordash|ubereats|grubhub|bar /.test(text)) return "dining";
-  if (/shell|chevron|exxon|mobil|gas|fuel|evgo|chargepoint/.test(text)) return "gas_ev";
-  if (/subscription|software|cloud|google|openai|anthropic|claude|service/.test(text)) return "services";
+  for (const [pattern, category] of MERCHANT_CATEGORY) {
+    if (pattern.test(text)) return category;
+  }
   return "everyday";
 }
 
@@ -771,22 +796,64 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+// "Today" (YYYY-MM-DD) in a given IANA time zone, so reminders match the user's
+// local calendar instead of UTC.
+function todayInTimeZone(timeZone) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timeZone || "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 async function sendDueReminders(env) {
   if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
     return json({ ok: true, sent: 0, message: "Email provider is not configured." });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const tomorrow = addDays(today, 1);
-  const [settingsRows, existingLogs, cards, benefits] = await Promise.all([
+  const nowUtc = new Date().toISOString().slice(0, 10);
+  // Wide window so per-cycle dedup works across the multi-day reminder window
+  // and across time zones (a user's "today" can be UTC ±1).
+  const since = addDays(nowUtc, -45);
+  const until = addDays(nowUtc, 2);
+  const [settingsRows, profileRows, existingLogs, cards, benefits] = await Promise.all([
     supabase(env, "automation_settings?select=user_id,email_reminder_enabled,default_reminder_email,payment_reminder_days,benefit_reminder_days&limit=1000"),
-    supabase(env, `reminder_logs?select=user_id,recipient,subject,created_at&created_at=gte.${today}T00:00:00Z&created_at=lt.${tomorrow}T00:00:00Z&limit=2000`),
+    supabase(env, "profiles?select=id,timezone&limit=2000"),
+    supabase(env, `reminder_logs?select=user_id,subject,created_at&created_at=gte.${since}T00:00:00Z&created_at=lt.${until}T00:00:00Z&limit=5000`),
     supabase(env, "cards?select=id,user_id,card_name,nickname,due_day,reminder_days_before,reminder_channel,reminder_email,anniversary_date&limit=1000"),
     supabase(env, "benefits?select=id,user_id,card_id,name,total_value,used_value,cycle,cycle_end,tracking_mode&limit=2000")
   ]);
   const settingsByUser = new Map((settingsRows || []).map(row => [row.user_id, row]));
-  const sentKeys = new Set((existingLogs || []).map(row => `${row.user_id}:${row.recipient}:${row.subject}`));
+  const tzByUser = new Map((profileRows || []).map(row => [row.id, row.timezone || "UTC"]));
+  // Dedup by user + subject. Subjects encode the due/cycle date, so each
+  // cycle/stage is emailed at most once even though the window spans days.
+  const sentKeys = new Set((existingLogs || []).map(row => `${row.user_id}::${row.subject}`));
   let sent = 0;
+
+  async function fire(userId, to, subject, text, meta) {
+    const key = `${userId}::${subject}`;
+    if (sentKeys.has(key)) return;
+    const providerResponse = await sendEmail(env, to, subject, text);
+    await supabase(env, "reminder_logs", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: userId,
+        channel: "email",
+        recipient: to,
+        subject,
+        status: "sent",
+        provider_response: { ...providerResponse, ...meta },
+        sent_at: new Date().toISOString()
+      })
+    });
+    sentKeys.add(key);
+    sent += 1;
+  }
 
   for (const card of cards || []) {
     const settings = settingsByUser.get(card.user_id) || {};
@@ -795,6 +862,7 @@ async function sendDueReminders(env) {
     // Fall back to the account-wide reminder email when the card has none.
     const to = card.reminder_email || settings.default_reminder_email;
     if (!to || !card.due_day) continue;
+    const today = todayInTimeZone(tzByUser.get(card.user_id));
     const label = card.nickname || card.card_name;
     const dueDate = dueDateThisMonth(Number(card.due_day), today);
     const reminderDays = Number(card.reminder_days_before ?? settings.payment_reminder_days ?? 7);
@@ -807,30 +875,14 @@ async function sendDueReminders(env) {
     else if (diff === -1) stage = "overdue";
     if (!stage) continue;
     const subject =
-      stage === "overdue" ? `Payment overdue: ${label}`
-      : stage === "due" ? `Payment due today: ${label}`
-      : `Payment reminder: ${label}`;
+      stage === "overdue" ? `Payment overdue: ${label} (due ${dueDate})`
+      : stage === "due" ? `Payment due today: ${label} (${dueDate})`
+      : `Payment reminder: ${label} (due ${dueDate})`;
     const text =
       stage === "overdue" ? `Payment for ${label} was due ${dueDate} and may be overdue. Please confirm it is paid.`
       : stage === "due" ? `Payment for ${label} is due today (${dueDate}).`
       : `Payment for ${label} is due ${dueDate}, in ${diff} day${diff === 1 ? "" : "s"}.`;
-    const logKey = `${card.user_id}:${to}:${subject}`;
-    if (sentKeys.has(logKey)) continue;
-    const providerResponse = await sendEmail(env, to, subject, text);
-    await supabase(env, "reminder_logs", {
-      method: "POST",
-      body: JSON.stringify({
-        user_id: card.user_id,
-        channel: "email",
-        recipient: to,
-        subject,
-        status: "sent",
-        provider_response: { ...providerResponse, type: "payment", stage, cardId: card.id, scheduledFor: today },
-        sent_at: new Date().toISOString()
-      })
-    });
-    sentKeys.add(logKey);
-    sent += 1;
+    await fire(card.user_id, to, subject, text, { type: "payment", stage, cardId: card.id, scheduledFor: today });
   }
 
   const cardsById = new Map((cards || []).map(card => [card.id, card]));
@@ -841,6 +893,7 @@ async function sendDueReminders(env) {
     if (!to) continue;
     const remaining = Number(benefit.total_value || 0) - Number(benefit.used_value || 0);
     if (remaining <= 0) continue;
+    const today = todayInTimeZone(tzByUser.get(benefit.user_id));
     const card = cardsById.get(benefit.card_id);
     const endDate = benefit.cycle_end || benefitCycleEndDate(benefit.cycle, card, today);
     if (!endDate) continue;
@@ -848,25 +901,9 @@ async function sendDueReminders(env) {
     const diff = daysBetweenDates(today, endDate); // endDate - today, in whole days
     // Remind through the run-up to expiry (and catch up if a cron run was missed).
     if (!(diff >= 0 && diff <= reminderDays)) continue;
-    const subject = `Benefit reminder: ${benefit.name}`;
+    const subject = `Benefit reminder: ${benefit.name} (by ${endDate})`;
     const text = `Benefit reminder for ${benefit.name}${card ? ` on ${card.nickname || card.card_name}` : ""}. Cycle ends ${endDate} (in ${diff} day${diff === 1 ? "" : "s"}). Remaining tracked value: $${Math.max(0, Math.round(remaining))}.`;
-    const logKey = `${benefit.user_id}:${to}:${subject}`;
-    if (sentKeys.has(logKey)) continue;
-    const providerResponse = await sendEmail(env, to, subject, text);
-    await supabase(env, "reminder_logs", {
-      method: "POST",
-      body: JSON.stringify({
-        user_id: benefit.user_id,
-        channel: "email",
-        recipient: to,
-        subject,
-        status: "sent",
-        provider_response: { ...providerResponse, type: "benefit", benefitId: benefit.id, cardId: benefit.card_id, scheduledFor: today },
-        sent_at: new Date().toISOString()
-      })
-    });
-    sentKeys.add(logKey);
-    sent += 1;
+    await fire(benefit.user_id, to, subject, text, { type: "benefit", benefitId: benefit.id, cardId: benefit.card_id, scheduledFor: today });
   }
 
   return json({ ok: true, sent });
