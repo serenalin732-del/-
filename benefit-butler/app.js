@@ -395,6 +395,72 @@ function aiRequestFields() {
   };
 }
 
+// Map an AI card-benefits result into benefit drafts (not yet added).
+function benefitDraftsFromAi(cardId, aiResult) {
+  const sourceNote = (aiResult.sourceUrls || []).slice(0, 3).join(" | ");
+  return (aiResult.benefits || []).map(item => ({
+    cardId,
+    name: item.name || "Unnamed benefit",
+    value: Number(item.value || 0),
+    used: 0,
+    cycle: ["monthly", "quarterly", "semiannual", "calendar", "anniversary", "custom"].includes(item.cycle) ? item.cycle : "calendar",
+    expires: item.cycle === "calendar" ? `${today.getFullYear()}-12-31` : "",
+    activation: item.activation === "yes" ? "yes" : "no",
+    tracking: ["auto", "review", "manual"].includes(item.tracking) ? item.tracking : "review",
+    benefitType: String(item.benefitType || "").toLowerCase() || "recurring_credit",
+    notes: `${item.notes || "AI 建议，建议核对官网。"}${sourceNote ? ` 来源：${sourceNote}` : ""}`
+  }));
+}
+
+// "Last refreshed from the issuer" label for a card (cache freshness).
+function cardFreshnessText(card) {
+  if (!card.sourceUpdatedAt) return interfaceLanguage === "zh" ? "未从官网更新" : "Not refreshed from issuer yet";
+  const days = Math.max(0, Math.floor((Date.now() - new Date(card.sourceUpdatedAt).getTime()) / 86400000));
+  const when = days === 0
+    ? (interfaceLanguage === "zh" ? "今天" : "today")
+    : (interfaceLanguage === "zh" ? `${days} 天前` : `${days} day(s) ago`);
+  return (interfaceLanguage === "zh" ? "上次从官网刷新：" : "Last refreshed: ") + when;
+}
+
+// Re-fetch a single card's official benefits/reward rules from the issuer via
+// AI, update the cached metadata, and let the user review which to track.
+async function refreshCardBenefits(cardId) {
+  const card = data.cards.find(item => item.id === cardId);
+  if (!card) return;
+  if (!automationSettings.workerUrl) {
+    setSyncStatus(interfaceLanguage === "zh" ? "请先在设置里保存 Cloudflare Worker URL。" : "Save the Worker URL in Settings first.", "warn");
+    return;
+  }
+  setSyncStatus(interfaceLanguage === "zh" ? `正在从官网刷新「${cardLabel(card)}」的福利，通常 20-90 秒...` : "Refreshing from the issuer site, 20-90s...");
+  try {
+    const token = (await supabaseClient?.auth.getSession())?.data?.session?.access_token;
+    if (!token) throw new Error(interfaceLanguage === "zh" ? "请先登录。" : "Please sign in.");
+    const response = await fetchWithTimeout(`${automationSettings.workerUrl.replace(/\/$/, "")}/card-benefits`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ issuer: card.issuer, bank: card.issuer, cardName: card.name, ...aiRequestFields() })
+    }, 120000);
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+    if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.message || text || "刷新失败。");
+    const aiResult = payload.result || payload;
+    card.rewardRules = aiResult.rewardRules || card.rewardRules || null;
+    card.sourceUrls = aiResult.sourceUrls || card.sourceUrls || [];
+    card.officialName = aiResult.cardName || card.officialName || card.name;
+    card.sourceUpdatedAt = new Date().toISOString();
+    if ((!Number(card.annualFee) || Number(card.annualFee) <= 0) && Number(aiResult.annualFee) > 0) {
+      card.annualFee = Number(aiResult.annualFee);
+    }
+    saveCardMetadata(card);
+    render();
+    await upsertRemoteCard(card);
+    setSyncStatus(interfaceLanguage === "zh" ? "官网资料已刷新，请在弹窗确认要追踪的福利。" : "Refreshed — confirm which benefits to track.");
+    presentBenefitReview(cardId, benefitDraftsFromAi(cardId, aiResult));
+  } catch (error) {
+    setSyncStatus((interfaceLanguage === "zh" ? "刷新失败：" : "Refresh failed: ") + (error.message || ""), "warn");
+  }
+}
+
 const BENEFIT_TYPE_LABELS = {
   recurring_credit: { zh: "经常性额度", en: "Recurring credit" },
   annual_perk: { zh: "年度福利", en: "Annual perk" },
@@ -2425,8 +2491,10 @@ function renderCards() {
               <strong>${escapeHtml(ruleSummary.program)}</strong>
               <div class="item-meta">${escapeHtml(ruleSummary.rates)}</div>
               <div class="item-meta">${ruleSummary.sourceUrl ? `来源：<a href="${escapeHtml(ruleSummary.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(ruleSummary.sourceLabel)}</a>` : escapeHtml(ruleSummary.sourceLabel)}</div>
+              <div class="item-meta">🕒 ${escapeHtml(cardFreshnessText(card))}</div>
             </div>
             <div class="row-actions">
+              <button class="small-button" data-refresh-card="${card.id}">🔄 ${interfaceLanguage === "zh" ? "刷新福利" : "Refresh"}</button>
               <button class="small-button" data-edit-card="${card.id}">${t("edit")}</button>
               <button class="small-button" data-calendar-card="${card.id}">${t("calendar")}</button>
               <button class="small-button" data-email-card="${card.id}">${t("emailDraft")}</button>
@@ -3875,21 +3943,9 @@ document.addEventListener("click", async event => {
     if (existingCardIndex >= 0) data.cards[existingCardIndex] = card;
     else data.cards.push(card);
 
-    const sourceNote = (aiResult.sourceUrls || []).slice(0, 3).join(" | ");
     // Build drafts but DON'T add them yet — the user reviews them first so
     // one-time / welcome bonuses don't get tracked as recurring annual value.
-    const drafts = (aiResult.benefits || []).map(item => ({
-      cardId,
-      name: item.name || "Unnamed benefit",
-      value: Number(item.value || 0),
-      used: 0,
-      cycle: ["monthly", "quarterly", "semiannual", "calendar", "anniversary", "custom"].includes(item.cycle) ? item.cycle : "calendar",
-      expires: item.cycle === "calendar" ? `${today.getFullYear()}-12-31` : "",
-      activation: item.activation === "yes" ? "yes" : "no",
-      tracking: ["auto", "review", "manual"].includes(item.tracking) ? item.tracking : "review",
-      benefitType: String(item.benefitType || "").toLowerCase() || "recurring_credit",
-      notes: `${item.notes || "AI 建议，建议核对官网。"}${sourceNote ? ` 来源：${sourceNote}` : ""}`
-    }));
+    const drafts = benefitDraftsFromAi(cardId, aiResult);
 
     render();
     await upsertRemoteCard(card);
@@ -3918,6 +3974,12 @@ document.addEventListener("click", async event => {
   const quickBenefitId = event.target.dataset.quickBenefit;
   const quickPercent = Number(event.target.dataset.quickPercent || 0);
   const toggleCardId = event.target.closest("[data-toggle-card]")?.dataset.toggleCard;
+  const refreshCardId = event.target.closest("[data-refresh-card]")?.dataset.refreshCard;
+
+  if (refreshCardId) {
+    refreshCardBenefits(refreshCardId);
+    return;
+  }
 
   if (quickBenefitId && quickPercent > 0) {
     const benefit = data.benefits.find(item => item.id === quickBenefitId);
