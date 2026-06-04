@@ -2319,7 +2319,8 @@ textarea {
   }
 }
 
-/* Dashboard hero: smaller stat tiles, larger recovery ring (desktop/tablet). */
+/* Dashboard hero: larger recovery ring + align the bottom stat row to the same
+   width as the rows above it, so the bigger ring stays balanced (desktop/tablet). */
 @media (min-width: 621px) {
   .recovery-ring {
     width: 264px;
@@ -2333,18 +2334,9 @@ textarea {
   .recovery-ring__inner span {
     font-size: 13px;
   }
+  /* Match the executive-summary block width (980px) instead of spanning the
+     full column, so all three rows line up and the ring gets breathing room. */
   .portfolio-hero__stats {
-    gap: 6px;
-    margin-top: 10px;
-  }
-  .portfolio-hero__stats span {
-    padding: 6px 8px;
-    gap: 1px;
-  }
-  .portfolio-hero__stats b {
-    font-size: 13px;
-  }
-  .portfolio-hero__stats small {
-    font-size: 10px;
+    max-width: 980px;
   }
 }
