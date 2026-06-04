@@ -977,7 +977,7 @@ async function loadRemoteApiKeyStatus() {
     if (!response.ok || payload.ok === false) throw new Error(payload.error || text || "无法读取 API key 状态。");
     const remoteStatus = (payload.keys || []).map(item => ({
       provider: item.provider,
-      message: `已保存，末四位 ${item.lastFour || "未知"}。完整 key 只保存在 Worker 后端，不会显示在浏览器里。`
+      message: `已保存，末四位 ${item.last_four || item.lastFour || "未知"}。完整 key 只保存在 Worker 后端，不会显示在浏览器里。`
     }));
     if (remoteStatus.length) {
       apiKeyStatus = remoteStatus;
@@ -1566,9 +1566,30 @@ function estimatePointValue(program = "") {
   return 0.01;
 }
 
+// Best-effort card-network inference (used for merchant acceptance checks).
+// Prefers an explicit card.network; otherwise guesses from the card/issuer name.
+function cardNetwork(card = {}) {
+  if (card.network) return String(card.network).toLowerCase();
+  const text = `${card.cardName || ""} ${card.issuer || ""} ${card.nickname || ""}`.toLowerCase();
+  if (/amex|american express|membership reward|delta skymiles|platinum card|gold card|blue cash|hilton honors|bonvoy brilliant|business platinum|business gold|green card/.test(text)) return "amex";
+  if (/discover/.test(text)) return "discover";
+  if (/sapphire|venture|freedom|quicksilver|savorone|savor|\bink\b|united (explorer|club|quest)|southwest|aadvantage|world of hyatt|bonvoy (boundless|bountiful|bold)|\bvisa\b/.test(text)) return "visa";
+  if (/mastercard|world elite|\bmc\b/.test(text)) return "mastercard";
+  return "";
+}
+
+// Well-known US merchant network restrictions. Returns the accepted networks,
+// or null when there is no known restriction.
+function merchantAcceptedNetworks(merchant = "") {
+  const text = String(merchant).toLowerCase();
+  if (/costco/.test(text)) return ["visa"]; // Costco US accepts Visa credit cards only
+  return null;
+}
+
 function optimizeWalletSpend(merchant = "", amount = 0) {
   const category = normalizeRewardCategory(merchant);
   const spend = Math.max(0, Number(amount || 0));
+  const accepted = merchantAcceptedNetworks(merchant);
   return data.cards
     .filter(card => getCardRewardRules(card).official)
     .map(card => {
@@ -1576,16 +1597,27 @@ function optimizeWalletSpend(merchant = "", amount = 0) {
       const multiplier = Number(rules.rates?.[category] || rules.defaultRate || 1);
       const points = Math.round(spend * multiplier);
       const centsPerPoint = estimatePointValue(rules.program);
+      const network = cardNetwork(card);
+      // Only flag as not-accepted when we are confident about the card's network.
+      const acceptedHere = !accepted || !network || accepted.includes(network);
       return {
         card,
         category,
         multiplier,
         points,
         estimatedValue: points * centsPerPoint,
-        program: rules.program || "Rewards"
+        program: rules.program || "Rewards",
+        network,
+        acceptedHere,
+        acceptNote: acceptedHere ? "" : `${merchant.trim()} 可能不接受 ${network.toUpperCase()} 卡`
       };
     })
-    .sort((a, b) => b.estimatedValue - a.estimatedValue || b.multiplier - a.multiplier);
+    // Cards the merchant accepts come first, then by estimated value.
+    .sort((a, b) =>
+      (b.acceptedHere - a.acceptedHere) ||
+      b.estimatedValue - a.estimatedValue ||
+      b.multiplier - a.multiplier
+    );
 }
 
 function render() {
@@ -3210,22 +3242,25 @@ byId("walletOptimizerForm")?.addEventListener("submit", event => {
     return;
   }
   const results = optimizeWalletSpend(merchant, amount).slice(0, 3);
-  byId("walletOptimizerResult").innerHTML = results.length ? results.map((result, index) => `
-    <article class="list-item wallet-result ${index === 0 ? "best" : ""}">
+  byId("walletOptimizerResult").innerHTML = results.length ? results.map((result, index) => {
+    const isTop = index === 0 && result.acceptedHere;
+    return `
+    <article class="list-item wallet-result ${isTop ? "best" : ""} ${result.acceptedHere ? "" : "not-accepted"}">
       <div class="item-top">
         <div>
-          <strong>${index === 0 ? "Recommended: " : ""}${escapeHtml(cardLabel(result.card))}</strong>
-          <div class="item-meta">${escapeHtml(result.category)} · ${escapeHtml(result.program)} · ${result.multiplier}x</div>
+          <strong>${isTop ? "Recommended: " : ""}${escapeHtml(cardLabel(result.card))}</strong>
+          <div class="item-meta">${escapeHtml(result.category)} · ${escapeHtml(result.program)} · ${result.multiplier}x${result.network ? " · " + result.network.toUpperCase() : ""}</div>
         </div>
-        <span class="tag ${index === 0 ? "blue" : "warn"}">${number(result.points)} pts</span>
+        <span class="tag ${isTop ? "blue" : "warn"}">${number(result.points)} pts</span>
       </div>
+      ${result.acceptNote ? `<div class="item-meta accept-warning">⚠️ ${escapeHtml(result.acceptNote)}</div>` : ""}
       <div class="summary-strip">
         <span>Spend ${dollars(amount)}</span>
         <span>Estimated value ${dollars(result.estimatedValue)}</span>
         <span>${result.multiplier}x multiplier</span>
       </div>
-    </article>
-  `).join("") : empty("Add reward rules to cards before using Wallet Optimizer.");
+    </article>`;
+  }).join("") : empty("Add reward rules to cards before using Wallet Optimizer.");
 });
 
 function normalizeRewardCategory(value = "") {

@@ -1911,9 +1911,9 @@ textarea {
   }
 
   .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 15;
+    /* Not sticky on phones — the bottom tab bar handles nav, so let the brand
+       bar scroll away instead of eating the limited screen height. */
+    position: static;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
@@ -2339,4 +2339,14 @@ textarea {
   .portfolio-hero__stats {
     max-width: 980px;
   }
+}
+
+/* Wallet Optimizer: card-network acceptance warnings. */
+.wallet-result.not-accepted {
+  opacity: 0.8;
+}
+.accept-warning {
+  color: #c0392b;
+  font-weight: 600;
+  margin-top: 4px;
 }
