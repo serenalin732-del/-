@@ -2118,8 +2118,8 @@ textarea {
   }
 
   #dashboardView .content-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   #dashboardView .content-grid .panel {
