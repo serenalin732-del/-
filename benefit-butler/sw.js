@@ -1,4 +1,4 @@
-const CACHE_NAME = "credit-card-butler-v20";
+const CACHE_NAME = "credit-card-butler-v21";
 const CORE_ASSETS = [
   "./",
   "./index.html",
