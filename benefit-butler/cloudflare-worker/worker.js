@@ -12,14 +12,10 @@ export default {
           hasServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
           hasEncryptionSecret: Boolean(env.KEY_ENCRYPTION_SECRET),
           hasEmailProvider: Boolean(env.RESEND_API_KEY && env.FROM_EMAIL),
-          openAiModel: env.OPENAI_MODEL || "gpt-5-mini",
-          openAiSearchModel: env.OPENAI_SEARCH_MODEL || "gpt-5-mini",
-          allowedClientModels: ["gpt-5-mini", "gpt-5"],
-          aiRouter: {
-            fast: "gpt-5-mini",
-            balanced: "gpt-5-mini",
-            advisor: "gpt-5"
-          }
+          aiProviders: Object.keys(PROVIDER_DEFAULTS),
+          defaultProvider: (env.AI_PROVIDER || "openai").toLowerCase(),
+          aiModelDefaults: PROVIDER_DEFAULTS,
+          aiTaskTiers: TASK_TIER
         }));
       }
 
@@ -155,14 +151,14 @@ async function getUserApiKey(env, userId, provider = "openai") {
 async function suggestCardBenefits(request, env) {
   const user = await getUser(request, env);
   const body = await request.json();
-  const model = normalizeClientModel(body.model);
+  const cfg = aiConfig(body, env);
   const cardName = String(body.cardName || body.name || "").trim();
   const rawBank = String(body.bank || body.issuer || "").trim();
   const bank = normalizeIssuerName(rawBank);
   const normalizedCardName = normalizeCardSearchName(bank, cardName);
   if (!cardName) throw new Error("Missing card name");
 
-  const apiKey = await getUserApiKey(env, user.id, "openai");
+  const apiKey = await getUserApiKey(env, user.id, cfg.provider);
   const prompt = `Find the latest official issuer information for this credit card: ${bank} ${normalizedCardName}.
 Important:
 - Use the issuer's official website first.
@@ -190,7 +186,7 @@ Return only JSON:
 For each benefit, be explicit about whether the value is total annual value or per-month/per-period value. If the official page says monthly credits expire or do not roll over, say that. If not confirmed, use "unknown" and state that the user should verify in their account.
 Use official bank pages when possible. If unsure, mark notes clearly.`;
 
-  const result = await callOpenAiJson(env, apiKey, prompt, { webSearch: true, model });
+  const result = await callAIJson({ env, apiKey, cfg, task: "cardBenefits", content: prompt, webSearch: true });
   const normalized = normalizeCardBenefitResult(result, bank, normalizedCardName);
   return json({ ok: true, result: normalized, ...normalized });
 }
@@ -263,21 +259,27 @@ function buildBenefitNotes(item = {}) {
 async function createAiSummary(request, env) {
   const user = await getUser(request, env);
   const body = await request.json();
-  const model = normalizeClientModel(body.model);
-  const apiKey = await getUserApiKey(env, user.id, "openai");
+  const cfg = aiConfig(body, env);
+  const apiKey = await getUserApiKey(env, user.id, cfg.provider);
   const prompt = `Summarize this user's credit card benefits and reward usage. Return JSON with keys summary, wins, missed, nextActions.\n\n${JSON.stringify(body).slice(0, 18000)}`;
-  const result = await callOpenAiJson(env, apiKey, prompt, { model });
+  const task = String(body.summaryType || "") === "advisor" ? "advisor" : "summary";
+  const result = await callAIJson({ env, apiKey, cfg, task, content: prompt });
 
-  if (body.period) {
+  // Persisting the summary is best-effort: never fail the user's request just
+  // because logging to the database hiccupped.
+  try {
     await supabase(env, "ai_summaries", {
       method: "POST",
       body: JSON.stringify({
         user_id: user.id,
-        period: String(body.period),
         summary_type: String(body.summaryType || "manual"),
-        content: result
+        provider: cfg.provider,
+        summary_text: typeof result === "string" ? result : JSON.stringify(result),
+        summary_data: result
       })
     });
+  } catch (error) {
+    // ignore: summary is still returned below
   }
 
   return json({ ok: true, result });
@@ -306,7 +308,7 @@ async function parseStatement(request, env) {
     mimeType: document.mime_type || "",
     cardId: body.cardId || document.card_id,
     cardRules: body.cardRules || {},
-    model: normalizeClientModel(body.model)
+    cfg: aiConfig(body, env)
   });
 
   await supabase(env, `uploaded_documents?id=eq.${encodeURIComponent(documentId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
@@ -333,7 +335,7 @@ async function downloadStorageObject(env, bucket, objectPath) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-async function parseUploadedStatement({ env, user, file, fileName, mimeType, cardId, cardRules, model }) {
+async function parseUploadedStatement({ env, user, file, fileName, mimeType, cardId, cardRules, cfg }) {
   const name = String(fileName || "").toLowerCase();
   const type = String(mimeType || "").toLowerCase();
   const isCsv = name.endsWith(".csv") || name.endsWith(".tsv") || type.includes("csv") || type.includes("tab-separated");
@@ -355,7 +357,7 @@ async function parseUploadedStatement({ env, user, file, fileName, mimeType, car
       };
     }
 
-    const extracted = await aiExtractTextStatement(env, user.id, text, fileName, cardRules, model);
+    const extracted = await aiExtractTextStatement(env, user.id, text, fileName, cardRules, cfg);
     const enriched = estimateRewards(extracted.transactions || [], cardRules, cardId);
     return {
       parser: "ai-text",
@@ -366,7 +368,7 @@ async function parseUploadedStatement({ env, user, file, fileName, mimeType, car
     };
   }
 
-  const extracted = await aiExtractStatement(env, user.id, file, fileName, mimeType, cardRules, model);
+  const extracted = await aiExtractStatement(env, user.id, file, fileName, mimeType, cardRules, cfg);
   const enriched = estimateRewards(extracted.transactions || [], cardRules, cardId);
   return {
     parser: "ai-file",
@@ -529,112 +531,200 @@ function summarizeTransactions(transactions) {
   };
 }
 
-async function aiExtractTextStatement(env, userId, text, fileName, cardRules = {}, model = "") {
-  const apiKey = await getUserApiKey(env, userId, "openai");
+async function aiExtractTextStatement(env, userId, text, fileName, cardRules = {}, cfg = aiConfig({}, env)) {
+  const apiKey = await getUserApiKey(env, userId, cfg.provider);
   const prompt = `Extract credit card transactions from this text statement named ${fileName}.
 Return only JSON: {"transactions":[{"date":"","merchant":"","description":"","amount":0,"category":"","points":0,"multiplier":0}],"notes":[]}
 If points are not directly shown, leave points as 0. Card rules for later reward estimation: ${JSON.stringify(cardRules)}
 
 TEXT:
 ${text.slice(0, 40000)}`;
-  return callOpenAiJson(env, apiKey, prompt, { model });
+  return callAIJson({ env, apiKey, cfg, task: "extract", content: prompt });
 }
 
-async function aiExtractStatement(env, userId, file, fileName, mimeType, cardRules = {}, model = "") {
-  const apiKey = await getUserApiKey(env, userId, "openai");
+async function aiExtractStatement(env, userId, file, fileName, mimeType, cardRules = {}, cfg = aiConfig({}, env)) {
+  const apiKey = await getUserApiKey(env, userId, cfg.provider);
   const lowerName = String(fileName || "").toLowerCase();
   const type = mimeType || (lowerName.endsWith(".pdf") ? "application/pdf" : "image/png");
-  const base64 = bytesToBase64(file);
+  const data = bytesToBase64(file);
   const instruction = `Read this statement or screenshot and extract transactions. Return only JSON: {"transactions":[{"date":"","merchant":"","description":"","amount":0,"category":"","points":0,"multiplier":0}],"notes":[]}. If points are not visible, set points to 0. Card rules for later reward estimation: ${JSON.stringify(cardRules)}`;
   const isPdf = type.includes("pdf") || lowerName.endsWith(".pdf");
-  const prompt = isPdf
-    ? [
-      { type: "input_text", text: instruction },
-      { type: "input_file", filename: fileName || "statement.pdf", file_data: `data:${type};base64,${base64}` }
-    ]
-    : [
-      { type: "input_text", text: instruction },
-      { type: "input_image", image_url: `data:${type};base64,${base64}` }
-    ];
-  return callOpenAiJson(env, apiKey, prompt, { model });
+  const content = [
+    { kind: "text", text: instruction },
+    isPdf
+      ? { kind: "file", mime: type, data, filename: fileName || "statement.pdf" }
+      : { kind: "image", mime: type, data }
+  ];
+  return callAIJson({ env, apiKey, cfg, task: "extract", content });
 }
 
-function normalizeClientModel(model = "") {
-  const value = String(model || "").trim().toLowerCase();
-  return ["gpt-5-mini", "gpt-5"].includes(value) ? value : "";
-}
+// ---- AI provider routing (bring-your-own provider) -----------------------
+// The chosen provider plus the user's stored key for that provider decide where
+// requests go. Models are picked per task: a cheap model for extraction /
+// parsing / card lookup, a stronger model only for advisory summaries — so an
+// expensive model is never used by accident, and the model name can be
+// overridden per provider from Settings.
+const PROVIDER_DEFAULTS = {
+  openai: { fast: "gpt-4.1-mini", strong: "gpt-4.1", search: true },
+  anthropic: { fast: "claude-haiku-4-5", strong: "claude-sonnet-4-6", search: false },
+  gemini: { fast: "gemini-2.0-flash", strong: "gemini-2.5-pro", search: true },
+  custom: { fast: "", strong: "", search: false }
+};
 
-async function callOpenAiJson(env, apiKey, content, options = {}) {
-  const body = {
-    model: options.model || (options.webSearch ? (env.OPENAI_SEARCH_MODEL || "gpt-5-mini") : (env.OPENAI_MODEL || "gpt-5-mini")),
-    input: Array.isArray(content)
-      ? [{ role: "user", content }]
-      : [{ role: "user", content: [{ type: "input_text", text: String(content) }] }]
+const TASK_TIER = {
+  extract: "fast",
+  classify: "fast",
+  cardBenefits: "fast",
+  summary: "fast",
+  advisor: "strong"
+};
+
+function aiConfig(body = {}, env = {}) {
+  const provider = String(body.provider || env.AI_PROVIDER || "openai").toLowerCase();
+  const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openai;
+  return {
+    provider,
+    defaults,
+    baseUrl: String(body.aiBaseUrl || "").trim(),
+    modelOverride: String(body.aiModel || "").trim()
   };
+}
 
-  if (options.webSearch) {
-    body.tools = [{ type: "web_search_preview", search_context_size: "low" }];
-    body.tool_choice = "auto";
-  } else {
-    body.text = { format: { type: "json_object" } };
-  }
+function resolveModel(cfg, task) {
+  if (cfg.modelOverride) return cfg.modelOverride; // explicit user choice wins
+  const tier = TASK_TIER[task] || "fast";
+  return cfg.defaults[tier] || cfg.defaults.fast || "";
+}
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+// Normalized content: a string, or an array of parts:
+//   { kind: "text", text }
+//   { kind: "image", mime, data }            (data = base64)
+//   { kind: "file",  mime, data, filename }
+function asParts(content) {
+  if (Array.isArray(content)) return content;
+  return [{ kind: "text", text: String(content) }];
+}
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error?.message || "OpenAI request failed");
-
-  const output = extractOutputText(payload);
-  if (!output) throw new Error("OpenAI returned empty output");
+function parseAiJson(text) {
+  const raw = String(text || "").trim();
+  if (!raw) throw new Error("AI returned empty output");
   try {
-    return JSON.parse(output);
+    return JSON.parse(raw);
   } catch {
-    const jsonText = extractJsonObject(output);
-    if (jsonText) {
+    const slice = extractJsonObject(raw);
+    if (slice) {
       try {
-        return JSON.parse(jsonText);
+        return JSON.parse(slice);
       } catch {
-        // Fall through to the readable error below.
+        // fall through to the readable error
       }
     }
-    throw new Error(`OpenAI returned non-JSON output: ${output.slice(0, 500)}`);
+    throw new Error(`AI returned non-JSON output: ${raw.slice(0, 400)}`);
   }
 }
 
-async function callOpenAiText(env, apiKey, content, options = {}) {
-  const body = {
-    model: options.model || (options.webSearch ? (env.OPENAI_SEARCH_MODEL || "gpt-5-mini") : (env.OPENAI_MODEL || "gpt-5-mini")),
-    input: Array.isArray(content)
-      ? [{ role: "user", content }]
-      : [{ role: "user", content: [{ type: "input_text", text: String(content) }] }]
-  };
+async function callAIText({ env, apiKey, cfg, task, content, webSearch = false, json = false }) {
+  const model = resolveModel(cfg, task);
+  if (!model) throw new Error(`No model configured for provider "${cfg.provider}". Set a model name in Settings.`);
+  const useSearch = webSearch && cfg.defaults.search;
+  if (cfg.provider === "anthropic") return callAnthropic({ apiKey, model, parts: asParts(content), json });
+  if (cfg.provider === "gemini") return callGemini({ apiKey, model, parts: asParts(content), json, webSearch: useSearch });
+  if (cfg.provider === "custom") return callOpenAiCompatible({ baseUrl: cfg.baseUrl, apiKey, model, parts: asParts(content), json });
+  return callOpenAiResponses({ apiKey, model, parts: asParts(content), json, webSearch: useSearch });
+}
 
-  if (options.webSearch) {
-    body.tools = [{ type: "web_search_preview", search_context_size: "low" }];
-    body.tool_choice = "auto";
-  }
+async function callAIJson(opts) {
+  return parseAiJson(await callAIText({ ...opts, json: true }));
+}
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+async function postJson(url, headers, body) {
+  const response = await fetch(url, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json"
-    },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
-
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error?.message || "OpenAI web search request failed");
-  const output = extractOutputText(payload);
-  if (!output) throw new Error("OpenAI web search returned empty output");
-  return output;
+  if (!response.ok) {
+    const message =
+      payload?.error?.message ||
+      payload?.error?.[0]?.message ||
+      payload?.message ||
+      (typeof payload === "string" ? payload : "") ||
+      `AI request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return payload;
+}
+
+// OpenAI Responses API (also the default provider).
+async function callOpenAiResponses({ apiKey, model, parts, json, webSearch }) {
+  const content = parts.map((p) => {
+    if (p.kind === "image") return { type: "input_image", image_url: `data:${p.mime};base64,${p.data}` };
+    if (p.kind === "file") return { type: "input_file", filename: p.filename || "file", file_data: `data:${p.mime};base64,${p.data}` };
+    return { type: "input_text", text: p.text || "" };
+  });
+  const body = { model, input: [{ role: "user", content }] };
+  if (webSearch) {
+    body.tools = [{ type: "web_search_preview", search_context_size: "low" }];
+    body.tool_choice = "auto";
+  } else if (json) {
+    body.text = { format: { type: "json_object" } };
+  }
+  const payload = await postJson("https://api.openai.com/v1/responses", { authorization: `Bearer ${apiKey}` }, body);
+  const out = extractOutputText(payload);
+  if (!out) throw new Error("OpenAI returned empty output");
+  return out;
+}
+
+// Anthropic Messages API.
+async function callAnthropic({ apiKey, model, parts, json }) {
+  const content = parts.map((p) => {
+    if (p.kind === "image") return { type: "image", source: { type: "base64", media_type: p.mime, data: p.data } };
+    if (p.kind === "file") return { type: "document", source: { type: "base64", media_type: p.mime || "application/pdf", data: p.data } };
+    return { type: "text", text: p.text || "" };
+  });
+  const body = { model, max_tokens: 4096, messages: [{ role: "user", content }] };
+  if (json) body.system = "Respond with only a single valid JSON object and no other text.";
+  const payload = await postJson(
+    "https://api.anthropic.com/v1/messages",
+    { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    body
+  );
+  const out = (payload?.content || []).filter((c) => c.type === "text").map((c) => c.text).join("").trim();
+  if (!out) throw new Error("Anthropic returned empty output");
+  return out;
+}
+
+// Google Gemini generateContent API.
+async function callGemini({ apiKey, model, parts, json, webSearch }) {
+  const gParts = parts.map((p) => {
+    if (p.kind === "image" || p.kind === "file") return { inline_data: { mime_type: p.mime, data: p.data } };
+    return { text: p.text || "" };
+  });
+  const body = { contents: [{ role: "user", parts: gParts }], generationConfig: {} };
+  if (webSearch) body.tools = [{ google_search: {} }];
+  else if (json) body.generationConfig.response_mime_type = "application/json";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const payload = await postJson(url, {}, body);
+  const out = (payload?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  if (!out) throw new Error("Gemini returned empty output");
+  return out;
+}
+
+// Any OpenAI-compatible endpoint (OpenRouter, Together, Azure, local, ...).
+async function callOpenAiCompatible({ baseUrl, apiKey, model, parts, json }) {
+  if (!baseUrl) throw new Error("Custom provider needs a base URL (set it in Settings).");
+  const content = parts.map((p) => {
+    if (p.kind === "image" || p.kind === "file") return { type: "image_url", image_url: { url: `data:${p.mime};base64,${p.data}` } };
+    return { type: "text", text: p.text || "" };
+  });
+  const body = { model, messages: [{ role: "user", content }] };
+  if (json) body.response_format = { type: "json_object" };
+  const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const payload = await postJson(endpoint, { authorization: `Bearer ${apiKey}` }, body);
+  const out = payload?.choices?.[0]?.message?.content;
+  if (!out) throw new Error("Custom provider returned empty output");
+  return String(out);
 }
 
 function extractJsonObject(text) {
