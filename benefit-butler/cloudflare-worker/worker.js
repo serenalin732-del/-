@@ -136,6 +136,9 @@ async function saveApiKey(request, env) {
   const lastFour = apiKey.slice(-4);
   await supabase(env, "user_api_keys?on_conflict=user_id,provider", {
     method: "POST",
+    // merge-duplicates makes this a real upsert; without it, re-saving a key for
+    // the same (user, provider) hits the unique constraint (23505).
+    headers: { prefer: "resolution=merge-duplicates,return=representation" },
     body: JSON.stringify({
       user_id: user.id,
       provider,

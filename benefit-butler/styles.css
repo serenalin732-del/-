@@ -2318,3 +2318,29 @@ textarea {
     margin: 8px 2px 0;
   }
 }
+
+/* Dashboard hero: smaller stat tiles, larger recovery ring (desktop/tablet). */
+@media (min-width: 621px) {
+  .recovery-ring {
+    width: 220px;
+  }
+  .recovery-ring__inner {
+    width: 156px;
+  }
+  .recovery-ring__inner strong {
+    font-size: 44px;
+  }
+  .portfolio-hero__stats {
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .portfolio-hero__stats span {
+    padding: 8px 10px;
+  }
+  .portfolio-hero__stats b {
+    font-size: 15px;
+  }
+  .portfolio-hero__stats small {
+    font-size: 11px;
+  }
+}
