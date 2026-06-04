@@ -1519,18 +1519,21 @@ function getPriorityActions(limit = 5) {
         meta: interfaceLanguage === "zh"
           ? `${cardLabel(data.cards.find(card => card.id === benefit.cardId))} · 价值 ${dollars(benefitCashRemaining(benefit))}`
           : `${cardLabel(data.cards.find(card => card.id === benefit.cardId))} · ${dollars(benefitCashRemaining(benefit))} at risk`,
-        tag: effectiveDays === 999 ? (interfaceLanguage === "zh" ? "未设置日期" : "Unused") : (interfaceLanguage === "zh" ? `${effectiveDays} 天` : `${effectiveDays} days`),
+        tag: effectiveDays === 999 ? (interfaceLanguage === "zh" ? "未设置日期" : "Unused") : (interfaceLanguage === "zh" ? `${effectiveDays} 天后过期` : `${effectiveDays} days left`),
+        days: effectiveDays === 999 ? null : effectiveDays,
         score: urgency * 1000 + effectiveDays - benefitCashRemaining(benefit)
       };
     });
   const renewalActions = data.cards.map(card => {
     const perf = cardPerformance(card);
     const due = nextDueDate(card.dueDay);
+    const action = recommendationAction(perf.recommendation);
     return {
       type: "card",
-      title: interfaceLanguage === "zh" ? `${cardLabel(card)} 续卡价值` : `${cardLabel(card)} renewal value`,
-      meta: interfaceLanguage === "zh" ? `${perf.recommendation} · ROI ${perf.roi}% · 预计价值 ${dollars(perf.expected)}` : `${perf.recommendation} · ROI ${perf.roi}% · expected ${dollars(perf.expected)}`,
-      tag: interfaceLanguage === "zh" ? `${daysUntil(due)} 天` : `${daysUntil(due)} days`,
+      title: interfaceLanguage === "zh" ? `${cardLabel(card)} 续卡决策` : `${cardLabel(card)} renewal`,
+      meta: interfaceLanguage === "zh" ? `${action.label} · ROI ${perf.roi}% · 预计价值 ${dollars(perf.expected)}` : `${action.label} · ROI ${perf.roi}% · expected ${dollars(perf.expected)}`,
+      tag: interfaceLanguage === "zh" ? `${daysUntil(due)} 天后续费` : `renews in ${daysUntil(due)}d`,
+      days: daysUntil(due),
       score: perf.recommendation === "CANCEL" ? 50 : perf.recommendation === "DOWNGRADE" ? 100 : 400
     };
   });
@@ -1543,6 +1546,26 @@ function portfolioHealthScore() {
   const atRisk = getAtRiskBenefits(60).reduce((sum, item) => sum + item.remaining, 0);
   const score = Math.max(0, Math.min(100, Math.round(Math.min(roi, 120) * 0.65 + (totals.remainingValue ? 20 : 10) - Math.min(atRisk / 50, 25))));
   return { score, atRisk, actions: getPriorityActions(10) };
+}
+
+// Qualitative band for the 0-100 portfolio health score.
+function healthScoreBand(score) {
+  const zh = interfaceLanguage === "zh";
+  if (score >= 80) return zh ? "优秀" : "Excellent";
+  if (score >= 60) return zh ? "良好" : "Good";
+  if (score >= 40) return zh ? "一般" : "Fair";
+  return zh ? "偏低" : "Low";
+}
+
+// Maps a card renewal recommendation to a clear action label + severity class.
+function recommendationAction(rec = "") {
+  const zh = interfaceLanguage === "zh";
+  switch (String(rec).toUpperCase()) {
+    case "KEEP": return { label: zh ? "建议保留" : "Keep", cls: "blue" };
+    case "DOWNGRADE": return { label: zh ? "考虑降级" : "Downgrade", cls: "warn" };
+    case "CANCEL": return { label: zh ? "考虑取消" : "Cancel", cls: "danger" };
+    default: return { label: zh ? "继续观察" : "Review", cls: "warn" };
+  }
 }
 
 function portfolioInsight() {
@@ -2072,6 +2095,10 @@ function applyLanguage() {
   if (advisorPanelTitle) advisorPanelTitle.textContent = t("advisorRecommendations");
   const advisorPrivacy = document.querySelector("#advisorRecommendationList")?.closest(".panel")?.querySelector(".status-pill");
   if (advisorPrivacy) advisorPrivacy.textContent = t("privacyFirst");
+  const zh = interfaceLanguage === "zh";
+  if (byId("advisorRecoverableLabel")) byId("advisorRecoverableLabel").textContent = zh ? "可追回价值" : "Potential recoverable value";
+  if (byId("advisorExpirationLabel")) byId("advisorExpirationLabel").textContent = zh ? "面临过期风险" : "At risk of expiring";
+  if (byId("advisorActionLabel")) byId("advisorActionLabel").textContent = zh ? "待处理事项" : "Things to do";
   if (byId("walletTitle")) byId("walletTitle").textContent = t("walletTitle");
   if (byId("walletIntro")) byId("walletIntro").textContent = t("walletIntro");
   if (byId("walletPanelTitle")) byId("walletPanelTitle").textContent = t("walletPanelTitle");
@@ -3513,6 +3540,9 @@ function renderAnalysis() {
   const totals = getTotals();
   const health = portfolioHealthScore();
   if (byId("advisorHealthScore")) byId("advisorHealthScore").textContent = number(health.score);
+  if (byId("advisorScoreCaption")) byId("advisorScoreCaption").textContent = interfaceLanguage === "zh"
+    ? `健康度${healthScoreBand(health.score)}（综合年费回收率、待用价值与过期风险）`
+    : `${healthScoreBand(health.score)} · recovery rate, unused value & expiry risk`;
   if (byId("advisorRecoverableValue")) byId("advisorRecoverableValue").textContent = dollars(totals.remainingValue);
   if (byId("advisorExpirationRisk")) byId("advisorExpirationRisk").textContent = dollars(health.atRisk);
   if (byId("advisorActionCount")) byId("advisorActionCount").textContent = number(health.actions.length);
@@ -3542,39 +3572,55 @@ function renderAnalysis() {
         </div>
       </article>
     `;
+    const zh = interfaceLanguage === "zh";
     const cardReports = data.cards.map(card => {
       const perf = cardPerformance(card);
-      const risk = perf.recommendation === "KEEP" ? "Low" : perf.recommendation === "REVIEW" ? "Medium" : "High";
+      const action = recommendationAction(perf.recommendation);
       return `
-        <article class="advisor-report">
+        <article class="advisor-report rec-${action.cls}">
           <div class="item-top">
             <div>
               <strong>${escapeHtml(cardLabel(card))}</strong>
-              <div class="item-meta">${escapeHtml(card.issuer || "")} · Risk ${risk}</div>
+              <div class="item-meta">${escapeHtml(card.issuer || "")} · ROI ${perf.roi}%</div>
             </div>
-            <span class="tag ${perf.recommendation === "KEEP" ? "blue" : "warn"}">${escapeHtml(perf.recommendation)}</span>
+            <span class="tag ${action.cls}">${escapeHtml(action.label)}</span>
           </div>
           <div class="summary-strip">
-            <span>Fee ${dollars(perf.annualFee)}</span>
-            <span>Recovered ${dollars(perf.recovered)}</span>
-            <span>Remaining ${dollars(perf.remaining)}</span>
-            <span>Net ${valueLabel(perf.net)}</span>
+            <span>${zh ? "年费" : "Fee"} ${dollars(perf.annualFee)}</span>
+            <span>${zh ? "已回收" : "Recovered"} ${dollars(perf.recovered)}</span>
+            <span>${zh ? "待使用" : "Remaining"} ${dollars(perf.remaining)}</span>
+            <span>${zh ? "净收益" : "Net"} ${valueLabel(perf.net)}</span>
           </div>
-          <div class="item-meta"><strong>Reason:</strong> ${escapeHtml(cardRecommendationReason(card, perf))}</div>
+          <div class="item-meta advisor-reason"><strong>${zh ? "建议" : "Advice"}：</strong>${escapeHtml(cardRecommendationReason(card, perf))}</div>
         </article>
       `;
     }).join("");
-    const actionRows = health.actions.slice(0, 5).map(action => `
-      <article class="priority-item">
-        <div>
-          <strong>${escapeHtml(action.title)}</strong>
-          <div class="item-meta">${escapeHtml(action.meta)}</div>
-        </div>
-        <span class="tag warn">${escapeHtml(action.tag)}</span>
-      </article>
-    `).join("");
+    const actionRows = health.actions.slice(0, 5).map(action => {
+      const urgent = action.days != null && action.days <= 14;
+      const soon = action.days != null && action.days <= 45;
+      const tagCls = urgent ? "danger" : soon ? "warn" : "blue";
+      const isBenefit = action.type === "benefit";
+      const verb = isBenefit ? (zh ? "去使用" : "Use it") : (zh ? "做决策" : "Decide");
+      const icon = isBenefit ? "🎁" : "🔁";
+      return `
+        <article class="priority-item ${urgent ? "urgent" : ""}">
+          <div class="priority-main">
+            <span class="priority-verb">${icon} ${verb}</span>
+            <strong>${escapeHtml(action.title)}</strong>
+            <div class="item-meta">${escapeHtml(action.meta)}</div>
+          </div>
+          <span class="tag ${tagCls}">${escapeHtml(action.tag)}</span>
+        </article>
+      `;
+    }).join("");
+    const bandTitle = zh ? "现在该做什么（按优先级）" : "What to do now (by priority)";
+    const cardsTitle = zh ? "每张卡的续卡建议" : "Per-card renewal advice";
     byId("advisorRecommendationList").innerHTML = data.cards.length
-      ? `${portfolioReport}${cardReports}<div class="priority-band">${actionRows}</div>`
+      ? `${portfolioReport}
+         <div class="advisor-section-title">${bandTitle}</div>
+         <div class="priority-band">${actionRows || empty(zh ? "暂无待处理事项，全部用好了。" : "Nothing pending — all caught up.")}</div>
+         <div class="advisor-section-title">${cardsTitle}</div>
+         ${cardReports}`
       : empty("Add cards and benefits to generate an advisor report.");
   }
 

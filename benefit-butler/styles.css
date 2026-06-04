@@ -971,6 +971,57 @@ textarea:disabled {
 
 .priority-band {
   margin-bottom: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+/* Advisor page hierarchy ------------------------------------------------ */
+.advisor-score small {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.82;
+  margin-top: 2px;
+  max-width: 220px;
+}
+
+.advisor-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted, #6b7280);
+  margin: 18px 0 8px;
+}
+
+.priority-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.priority-verb {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--accent-2, #2c6e9e);
+}
+
+.priority-item.urgent {
+  border-color: var(--danger, #c0392b);
+  background: #fff6f5;
+}
+.priority-item.urgent .priority-verb {
+  color: var(--danger, #c0392b);
+}
+
+/* Left accent on each per-card renewal recommendation by severity. */
+.advisor-report.rec-blue { border-left: 4px solid var(--accent-2, #2c6e9e); }
+.advisor-report.rec-warn { border-left: 4px solid var(--warn, #d98318); }
+.advisor-report.rec-danger { border-left: 4px solid var(--danger, #c0392b); }
+.advisor-reason {
+  margin-top: 6px;
 }
 
 .benefit-overlap-insights {
