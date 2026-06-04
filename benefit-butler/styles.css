@@ -2416,3 +2416,57 @@ textarea {
   font-style: italic;
   margin-bottom: 8px;
 }
+
+/* Dashboard benefit charts (dependency-free bar charts) */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+.chart-card h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+.bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 34%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.bar-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar-track {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--soft);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.bar-value {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.chart-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 4px 0;
+}

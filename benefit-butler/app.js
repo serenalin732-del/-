@@ -2450,8 +2450,63 @@ function renderAiSummary(summary) {
   `;
 }
 
+// Renders an HTML bar chart into `container`. rows: [{ label, value, color }].
+function renderBarChart(container, rows, { unit = "money", empty = "" } = {}) {
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = `<p class="chart-empty">${escapeHtml(empty)}</p>`;
+    return;
+  }
+  const max = Math.max(...rows.map(r => r.value), 1);
+  container.innerHTML = rows.map(r => {
+    const pct = Math.max(2, Math.round((r.value / max) * 100));
+    const valueText = unit === "money" ? dollars(r.value) : number(r.value);
+    return `
+      <div class="bar-row">
+        <span class="bar-label" title="${escapeHtml(r.label)}">${escapeHtml(r.label)}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${pct}%;background:${r.color || "var(--accent)"}"></span></span>
+        <span class="bar-value">${valueText}</span>
+      </div>`;
+  }).join("");
+}
+
+// Dashboard visualizations for unused (still-recoverable) benefit value:
+//   1) remaining value grouped by card  2) remaining value by expiry-risk band.
+function renderBenefitCharts() {
+  const zh = interfaceLanguage === "zh";
+  if (byId("benefitChartsTitle")) byId("benefitChartsTitle").textContent = zh ? "未使用福利 · 一眼看懂" : "Unused benefits at a glance";
+  if (byId("unusedByCardTitle")) byId("unusedByCardTitle").textContent = zh ? "各卡未使用价值" : "Unused value by card";
+  if (byId("expiryRiskTitle")) byId("expiryRiskTitle").textContent = zh ? "未使用价值 · 到期风险" : "Unused value by expiry risk";
+
+  // 1) Remaining cash value per card (top 6, descending).
+  const byCard = data.cards.map(card => ({
+    label: cardLabel(card),
+    value: data.benefits.filter(b => b.cardId === card.id).reduce((sum, b) => sum + benefitCashRemaining(b), 0)
+  })).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 6);
+  renderBarChart(byId("unusedByCardChart"), byCard, { empty: zh ? "没有未使用的福利价值。" : "No unused benefit value." });
+
+  // 2) Remaining value bucketed by days-to-expiry.
+  const bands = [
+    { key: "soon", label: zh ? "≤ 7 天" : "≤ 7 days", color: "var(--danger)", value: 0 },
+    { key: "month", label: zh ? "8–30 天" : "8–30 days", color: "var(--warn)", value: 0 },
+    { key: "quarter", label: zh ? "31–90 天" : "31–90 days", color: "var(--accent-2)", value: 0 },
+    { key: "later", label: zh ? "90 天以上 / 无期限" : "90+ days / no date", color: "var(--accent)", value: 0 }
+  ];
+  for (const benefit of data.benefits) {
+    const remaining = benefitCashRemaining(benefit);
+    if (remaining <= 0) continue;
+    const days = benefitEffectiveDays(benefit);
+    if (days >= 0 && days <= 7) bands[0].value += remaining;
+    else if (days > 7 && days <= 30) bands[1].value += remaining;
+    else if (days > 30 && days <= 90) bands[2].value += remaining;
+    else bands[3].value += remaining;
+  }
+  renderBarChart(byId("expiryRiskChart"), bands.filter(b => b.value > 0), { empty: zh ? "暂无到期风险。" : "No expiry risk right now." });
+}
+
 function renderDashboard() {
   const { totals, health, roi, renewalReviews, projectedNet } = portfolioInsight();
+  renderBenefitCharts();
   const atRiskItems = getAtRiskBenefits(60);
   const recoveryGap = Math.max(0, totals.annualFee - totals.usedValue);
   const topActions = getPriorityActions(3);
@@ -2551,7 +2606,8 @@ function renderDashboard() {
   const reminderList = byId("reminderList");
   if (reminderList) reminderList.innerHTML = reminders.length ? reminders.map(({ card, due }) => {
     const days = daysUntil(due);
-    const urgent = days <= Number(card.remindDays || 0);
+    const remindDays = effectiveCardReminder(card).remindDays;
+    const urgent = days <= Number(remindDays || 0);
     return `
       <article class="list-item">
         <div class="item-top">
@@ -2561,7 +2617,7 @@ function renderDashboard() {
           </div>
           <span class="tag ${urgent ? "warn" : "blue"}">${days === 0 ? "今天到期" : `${days} 天后`}</span>
         </div>
-        <div class="item-meta">提前 ${card.remindDays || 0} 天提醒；逾期提醒将在下一版接入手机推送。</div>
+        <div class="item-meta">提前 ${remindDays || 0} 天提醒；逾期提醒将在下一版接入手机推送。</div>
       </article>`;
   }).join("") : empty("还没有还款提醒。");
 
@@ -4457,7 +4513,7 @@ byId("benefitUseForm").addEventListener("submit", async event => {
 
 function downloadPaymentCalendar(card) {
   const due = nextDueDate(card.dueDay);
-  const reminderDays = Number(card.remindDays || 0);
+  const reminderDays = Number(effectiveCardReminder(card).remindDays || 0);
   const title = `${cardLabel(card)} 还款到期`;
   const description = `信用卡还款提醒：${card.issuer} ${card.name}${card.last4 ? ` 尾号 ${card.last4}` : ""}。建议确认是否已全额还款。`;
   const uid = `${card.id}-${icsDate(due)}@credit-card-butler`;
