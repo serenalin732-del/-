@@ -2855,7 +2855,8 @@ function switchView(name, updateHash = true) {
   document.querySelectorAll(".view").forEach(view => view.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
   byId(`${viewName}View`).classList.add("active");
-  document.querySelector(`[data-view="${viewName}"]`)?.classList.add("active");
+  // Highlight the active item in every nav (sidebar + mobile bottom bar).
+  document.querySelectorAll(`[data-view="${viewName}"]`).forEach(el => el.classList.add("active"));
   mobileMenuOpen = false;
   document.querySelector(".sidebar")?.classList.remove("menu-open");
   byId("mobileMenuButton")?.setAttribute("aria-expanded", "false");
@@ -2867,6 +2868,13 @@ function switchView(name, updateHash = true) {
 byId("mobileMenuButton")?.addEventListener("click", () => {
   mobileMenuOpen = !mobileMenuOpen;
   updateUserChrome();
+});
+
+// Mobile bottom-bar "更多" opens the full grouped nav (advanced views + settings).
+byId("bottomMoreButton")?.addEventListener("click", () => {
+  mobileMenuOpen = !mobileMenuOpen;
+  updateUserChrome();
+  if (mobileMenuOpen) window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
 document.querySelectorAll("[data-view]").forEach(button => {

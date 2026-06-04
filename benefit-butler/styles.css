@@ -2244,3 +2244,77 @@ textarea {
   height: 18px;
   margin-top: 3px;
 }
+
+/* Grouped sidebar nav (reduces perceived density of 8 items) */
+.nav-group-label {
+  margin: 12px 6px 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(216, 221, 217, 0.55);
+}
+.nav-group-label:first-child {
+  margin-top: 0;
+}
+
+/* Mobile bottom tab bar (hidden on larger screens) */
+.bottom-nav {
+  display: none;
+}
+
+@media (max-width: 620px) {
+  .bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    gap: 2px;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: rgba(15, 23, 24, 0.96);
+    border-top: 1px solid rgba(216, 221, 217, 0.16);
+    backdrop-filter: blur(10px);
+  }
+
+  .bottom-nav .nav-item {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 2px;
+    min-height: 52px;
+    padding: 4px 2px;
+    border-radius: 10px;
+    font-size: 11px;
+    color: #b8c6cb;
+    background: transparent;
+    text-align: center;
+  }
+
+  .bottom-nav .nav-item .bn-ico {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .bottom-nav .nav-item.active {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  /* The bottom bar replaces the hamburger on phones. */
+  .mobile-menu-button {
+    display: none !important;
+  }
+
+  /* Keep page content clear of the fixed bottom bar. */
+  .main {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Group labels span the full width of the 2-column mobile menu. */
+  .sidebar .nav-group-label {
+    grid-column: 1 / -1;
+    margin: 8px 2px 0;
+  }
+}

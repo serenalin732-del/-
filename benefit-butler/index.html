@@ -128,13 +128,16 @@
       </div>
       <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-expanded="false" aria-controls="appNav">Menu</button>
       <nav class="nav" id="appNav">
+        <span class="nav-group-label">主要</span>
         <button class="nav-item active" data-view="dashboard">首页</button>
         <button class="nav-item" data-view="cards">卡片</button>
         <button class="nav-item" data-view="benefits">福利</button>
+        <span class="nav-group-label">分析</span>
         <button class="nav-item" data-view="rewards">积分</button>
-        <button class="nav-item" data-view="analysis">AI Advisor</button>
-        <button class="nav-item" data-view="wallet">Wallet Optimizer</button>
-        <button class="nav-item" data-view="reports">History</button>
+        <button class="nav-item" data-view="analysis">AI 顾问</button>
+        <button class="nav-item" data-view="wallet">选卡助手</button>
+        <span class="nav-group-label">系统</span>
+        <button class="nav-item" data-view="reports">历史</button>
         <button class="nav-item" data-view="settings">设置</button>
       </nav>
       <div class="sidebar-account">
@@ -712,6 +715,14 @@
         </div>
       </section>
     </main>
+
+    <nav class="bottom-nav" aria-label="主导航">
+      <button class="nav-item active" type="button" data-view="dashboard"><span class="bn-ico">🏠</span>首页</button>
+      <button class="nav-item" type="button" data-view="cards"><span class="bn-ico">💳</span>卡片</button>
+      <button class="nav-item" type="button" data-view="benefits"><span class="bn-ico">🎁</span>福利</button>
+      <button class="nav-item" type="button" data-view="rewards"><span class="bn-ico">⭐</span>积分</button>
+      <button class="nav-item" type="button" id="bottomMoreButton"><span class="bn-ico">⋯</span>更多</button>
+    </nav>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
