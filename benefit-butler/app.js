@@ -4379,7 +4379,18 @@ function openPaymentEmailDraft(card) {
     "",
     "请确认是否已全额还款。"
   ].join("\n"));
-  window.location.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
+  // Use an anchor with target=_blank instead of window.location.href: when the
+  // OS/browser has a webmail handler (e.g. Gmail) registered for mailto, setting
+  // location.href navigates the SPA tab away and leaves a blank page after the
+  // account chooser. An anchor click hands off to the mail handler without
+  // unloading the app.
+  const link = document.createElement("a");
+  link.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
+  link.target = "_blank";
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 byId("resetDemoButton").addEventListener("click", () => {
