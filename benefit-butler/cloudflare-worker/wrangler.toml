@@ -1,0 +1,23 @@
+# Cloudflare Worker config for Benefit Butler.
+#
+# IMPORTANT: set `name` to match your EXISTING worker so `wrangler deploy`
+# updates it instead of creating a duplicate (check it in the Cloudflare
+# dashboard under Workers & Pages).
+name = "benefit-butler"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Daily reminder run. "0 16 * * *" = every day at 16:00 UTC (~midnight Beijing).
+# The worker's scheduled() handler calls sendDueReminders(), which only emails
+# cards/benefits actually within their reminder window, so running daily is safe.
+[triggers]
+crons = ["0 16 * * *"]
+
+# Secrets are NOT stored here. Set them once via the dashboard
+# (Settings -> Variables and Secrets) or the CLI:
+#   wrangler secret put RESEND_API_KEY
+#   wrangler secret put FROM_EMAIL
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   wrangler secret put KEY_ENCRYPTION_SECRET
+# Optional: AI_PROVIDER, ALLOWED_ORIGINS

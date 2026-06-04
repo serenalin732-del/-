@@ -680,7 +680,7 @@ function validateCard(card) {
   if (card.annualFee < 0) return "年费不能是负数。";
   if (card.dueDay < 1 || card.dueDay > 31) return "还款到期日必须在 1 到 31 之间。";
   if (card.remindDays < 0 || card.remindDays > 60) return "提前提醒天数必须在 0 到 60 之间。";
-  if ((card.reminderChannel === "email" || card.reminderChannel === "both") && !card.reminderEmail) return "选择邮件提醒时，请填写提醒邮箱。";
+  if ((card.reminderChannel === "email" || card.reminderChannel === "both") && !card.reminderEmail && !automationSettings.defaultReminderEmail) return "选择邮件提醒时，请填写提醒邮箱（或先在设置里填默认提醒邮箱）。";
   return "";
 }
 
@@ -1826,6 +1826,7 @@ const languageText = {
     workerUrl: "Cloudflare Worker URL",
     saveTestKey: "保存并测试 Key",
     testEmail: "发送测试邮件",
+    sendRemindersNow: "立即发送提醒",
     aiModeHelp: "当前默认模型：{model}。系统会按任务自动路由：Fast 处理解析，Balanced 处理日常分析，Advisor 处理续卡和高级顾问报告。",
     aiSummary: "AI 总结",
     generateSummary: "生成当前总结",
@@ -1973,6 +1974,7 @@ const languageText = {
     workerUrl: "Cloudflare Worker URL",
     saveTestKey: "Save and test key",
     testEmail: "Send test email",
+    sendRemindersNow: "Send reminders now",
     aiModeHelp: "Current default model: {model}. The system routes by task: Fast for parsing, Balanced for daily analysis, Advisor for renewal and advanced reports.",
     aiSummary: "AI Summary",
     generateSummary: "Generate summary",
@@ -2196,6 +2198,7 @@ function applyLanguage() {
   if (apiKeySaveButton && !apiKeySaveButton.disabled) apiKeySaveButton.textContent = t("saveTestKey");
   if (byId("generateAiSummaryButton") && !byId("generateAiSummaryButton").disabled) byId("generateAiSummaryButton").textContent = t("generateSummary");
   if (byId("sendTestEmailButton") && !byId("sendTestEmailButton").disabled) byId("sendTestEmailButton").textContent = t("testEmail");
+  if (byId("sendRemindersNowButton") && !byId("sendRemindersNowButton").disabled) byId("sendRemindersNowButton").textContent = t("sendRemindersNow");
   setSelectOptions("aiModeInput", {
     fast: interfaceLanguage === "zh" ? AI_ROUTER_MODES.fast.labelZh : AI_ROUTER_MODES.fast.labelEn,
     balanced: interfaceLanguage === "zh" ? AI_ROUTER_MODES.balanced.labelZh : AI_ROUTER_MODES.balanced.labelEn,
@@ -2264,6 +2267,15 @@ function ensureDynamicButtons() {
     button.type = "button";
     button.id = "sendTestEmailButton";
     button.textContent = t("testEmail");
+    reminderSubmit?.parentElement?.insertBefore(button, reminderSubmit);
+  }
+  if (!byId("sendRemindersNowButton")) {
+    const reminderSubmit = byId("automationSettingsForm")?.querySelector('button[type="submit"]');
+    const button = document.createElement("button");
+    button.className = "secondary-button";
+    button.type = "button";
+    button.id = "sendRemindersNowButton";
+    button.textContent = t("sendRemindersNow");
     reminderSubmit?.parentElement?.insertBefore(button, reminderSubmit);
   }
   if (!byId("cardHolderFilterSelect")) {
@@ -2601,7 +2613,6 @@ function renderCards() {
               <button class="small-button" data-refresh-card="${card.id}">🔄 ${interfaceLanguage === "zh" ? "刷新福利" : "Refresh"}</button>
               <button class="small-button" data-edit-card="${card.id}">${t("edit")}</button>
               <button class="small-button" data-calendar-card="${card.id}">${t("calendar")}</button>
-              <button class="small-button" data-email-card="${card.id}">${t("emailDraft")}</button>
               <button class="small-button" data-delete-card="${card.id}">${t("delete")}</button>
             </div>
           </div>
@@ -3299,6 +3310,42 @@ document.addEventListener("click", async event => {
     const payload = text ? JSON.parse(text) : {};
     if (!response.ok || payload.ok === false) throw new Error(payload.error || text || "测试邮件发送失败。");
     setSyncStatus(`测试邮件已发送到 ${to}`);
+  } catch (error) {
+    setSyncStatus(error.message || t("emailProviderMissing"), "warn");
+  } finally {
+    setButtonBusy(event.target, false);
+  }
+});
+
+// Manually trigger the backend reminder run (same logic as the daily cron) so
+// you can verify delivery without waiting for the scheduled time.
+document.addEventListener("click", async event => {
+  if (event.target.id !== "sendRemindersNowButton") return;
+  if (!automationSettings.workerUrl) {
+    setSyncStatus("请先保存 Cloudflare Worker URL。", "warn");
+    return;
+  }
+  setButtonBusy(event.target, true, "发送中...");
+  try {
+    const token = (await supabaseClient?.auth.getSession())?.data?.session?.access_token;
+    if (!token) throw new Error("请先登录。");
+    const response = await fetchWithTimeout(`${automationSettings.workerUrl.replace(/\/$/, "")}/send-reminders`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`
+      },
+      body: "{}"
+    }, 20000);
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+    if (!response.ok || payload.ok === false) throw new Error(payload.error || text || "发送提醒失败。");
+    const sent = Number(payload.sent || 0);
+    setSyncStatus(
+      payload.message ? payload.message
+      : sent > 0 ? `已发送 ${sent} 封提醒，请检查收件箱（含垃圾邮件）。`
+      : "当前没有到期的卡片或福利需要提醒（这是正常的）。"
+    );
   } catch (error) {
     setSyncStatus(error.message || t("emailProviderMissing"), "warn");
   } finally {
@@ -4142,7 +4189,6 @@ document.addEventListener("click", async event => {
   const editCardId = event.target.dataset.editCard;
   const deleteCardId = event.target.dataset.deleteCard;
   const calendarCardId = event.target.dataset.calendarCard;
-  const emailCardId = event.target.dataset.emailCard;
   const editBenefitId = event.target.dataset.editBenefit;
   const reminderBenefitId = event.target.dataset.reminderBenefit;
   const deleteBenefitId = event.target.dataset.deleteBenefit;
@@ -4224,11 +4270,6 @@ document.addEventListener("click", async event => {
   if (calendarCardId) {
     const card = data.cards.find(item => item.id === calendarCardId);
     if (card) downloadPaymentCalendar(card);
-  }
-
-  if (emailCardId) {
-    const card = data.cards.find(item => item.id === emailCardId);
-    if (card) openPaymentEmailDraft(card);
   }
 
   if (editBenefitId || reminderBenefitId) {
@@ -4364,33 +4405,6 @@ function downloadPaymentCalendar(card) {
   link.download = `${safeFileName(title)}.ics`;
   link.click();
   URL.revokeObjectURL(link.href);
-}
-
-function openPaymentEmailDraft(card) {
-  const due = nextDueDate(card.dueDay);
-  const recipient = encodeURIComponent(card.reminderEmail || "");
-  const subject = encodeURIComponent(`${cardLabel(card)} 还款提醒`);
-  const body = encodeURIComponent([
-    `${cardLabel(card)} 将在 ${formatDate(due)} 到期。`,
-    "",
-    `银行：${card.issuer}`,
-    `卡片：${card.name}${card.last4 ? ` 尾号 ${card.last4}` : ""}`,
-    `提醒：提前 ${card.remindDays || 0} 天`,
-    "",
-    "请确认是否已全额还款。"
-  ].join("\n"));
-  // Use an anchor with target=_blank instead of window.location.href: when the
-  // OS/browser has a webmail handler (e.g. Gmail) registered for mailto, setting
-  // location.href navigates the SPA tab away and leaves a blank page after the
-  // account chooser. An anchor click hands off to the mail handler without
-  // unloading the app.
-  const link = document.createElement("a");
-  link.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
-  link.target = "_blank";
-  link.rel = "noopener";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
 }
 
 byId("resetDemoButton").addEventListener("click", () => {
