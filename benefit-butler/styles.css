@@ -2322,17 +2322,23 @@ textarea {
 /* Dashboard hero: larger recovery ring + align the bottom stat row to the same
    width as the rows above it, so the bigger ring stays balanced (desktop/tablet). */
 @media (min-width: 621px) {
+  /* Give the ring its own wider column so it can sit centered in the right
+     half instead of being pinned to the far edge. */
+  .portfolio-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+  }
   .recovery-ring {
-    width: 264px;
+    width: 320px;
+    justify-self: center;
   }
   .recovery-ring__inner {
-    width: 188px;
+    width: 228px;
   }
   .recovery-ring__inner strong {
-    font-size: 50px;
+    font-size: 60px;
   }
   .recovery-ring__inner span {
-    font-size: 13px;
+    font-size: 14px;
   }
   /* Match the executive-summary block width (980px) instead of spanning the
      full column, so all three rows line up and the ring gets breathing room. */
