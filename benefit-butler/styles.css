@@ -2356,3 +2356,12 @@ textarea {
   font-weight: 600;
   margin-top: 4px;
 }
+.wallet-condition {
+  color: #2c6e49;
+  margin-top: 4px;
+}
+.wallet-ai-note {
+  color: #6b7280;
+  font-style: italic;
+  margin-bottom: 8px;
+}

@@ -28,6 +28,7 @@ export default {
       if (url.pathname === "/send-reminders" && request.method === "POST") return cors(await sendDueReminders(env), origin);
       if (url.pathname === "/test-email" && request.method === "POST") return cors(await sendTestEmail(request, env), origin);
       if (url.pathname === "/test-key" && request.method === "POST") return cors(await testKey(request, env), origin);
+      if (url.pathname === "/merchant-insight" && request.method === "POST") return cors(await merchantInsight(request, env), origin);
 
       return cors(json({ ok: false, error: "Not found" }, 404), origin);
     } catch (error) {
@@ -176,6 +177,35 @@ async function testKey(request, env) {
   return json({ ok: true, provider: cfg.provider, model, sample: String(out).slice(0, 60) });
 }
 
+// AI-backed merchant insight: best bonus category, card networks the merchant
+// does NOT accept (e.g. Costco = Visa only; Restaurant Depot rejects Amex), and
+// whether bonus rewards require booking via a portal/official site.
+async function merchantInsight(request, env) {
+  const user = await getUser(request, env);
+  const body = await request.json();
+  const merchant = String(body.merchant || "").slice(0, 120).trim();
+  if (!merchant) throw new Error("Missing merchant");
+  const cfg = aiConfig(body, env);
+  const apiKey = await getUserApiKey(env, user.id, cfg.provider);
+  const prompt = `For the US merchant or spending description "${merchant}", reply with ONLY JSON:
+{"category":"dining|groceries|gas_ev|hotel|flight|travel|services|everyday","notAcceptedNetworks":[],"portalNote":"","reason":""}
+Rules:
+- category = the credit-card bonus category that best fits this merchant.
+- notAcceptedNetworks = lowercase card networks this merchant typically does NOT accept in the US, from visa, mastercard, amex, discover. Examples: Costco warehouses accept Visa only (so mastercard, amex, discover are not accepted); many wholesale / cash-and-carry stores such as Restaurant Depot, Smart & Final, and WinCo do not accept American Express. If all major networks are accepted, use [].
+- portalNote = if earning bonus rewards here usually requires booking through a card issuer's travel portal or the merchant's official site, say so briefly; otherwise "".`;
+  const result = await callAIJson({ env, apiKey, cfg, task: "classify", content: prompt });
+  return json({
+    ok: true,
+    merchant,
+    category: String(result.category || "").toLowerCase().trim(),
+    notAcceptedNetworks: (result.notAcceptedNetworks || result.notAccepted || [])
+      .map(n => String(n).toLowerCase().trim())
+      .filter(Boolean),
+    portalNote: String(result.portalNote || "").trim(),
+    reason: String(result.reason || "").trim()
+  });
+}
+
 async function suggestCardBenefits(request, env) {
   const user = await getUser(request, env);
   const body = await request.json();
@@ -195,7 +225,7 @@ Important:
 Return only JSON:
 {
   "card": {"name": "", "bank": "", "annualFee": 0, "sourceUrl": ""},
-  "rewardRules": {"program": "", "defaultRate": 1, "rates": {"dining": 1, "groceries": 1, "gas_ev": 1, "hotel": 1, "flight": 1, "travel": 1, "everyday": 1}},
+  "rewardRules": {"program": "", "network": "visa|mastercard|amex|discover", "defaultRate": 1, "rates": {"dining": 1, "groceries": 1, "gas_ev": 1, "hotel": 1, "flight": 1, "travel": 1, "everyday": 1}, "conditions": {}},
   "benefits": [{
     "name": "",
     "benefitType": "recurring_credit|annual_perk|welcome_bonus|one_time|elite_status|other",
@@ -212,6 +242,7 @@ Return only JSON:
   }],
   "notes": []
 }
+For rewardRules: set "network" to the card's payment network (visa, mastercard, amex, or discover). In "rates" use the multiplier earned for ordinary purchases in each category. When a higher multiplier is only earned by booking through the issuer's travel portal or a specific official site (e.g. 10x hotels via Capital One Travel, 5x flights via Amex Travel/booked directly with airlines), keep the ordinary rate in "rates" and put a short note in "conditions" keyed by that category, e.g. {"hotel": "10x only via Capital One Travel; ~3x booked directly", "flight": "5x via Amex Travel or airline direct"}.
 For each benefit, be explicit about whether the value is total annual value or per-month/per-period value. If the official page says monthly credits expire or do not roll over, say that. If not confirmed, use "unknown" and state that the user should verify in their account.
 Classify each item with benefitType: sign-up / welcome offers => "welcome_bonus"; credits that recur (monthly/quarterly/semiannual/annual statement credits) => "recurring_credit"; yearly perks like a free night award or companion pass => "annual_perk"; one-time credits such as Global Entry/TSA every 4 years => "one_time"; elite or loyalty status => "elite_status"; anything else => "other". Do not present welcome/sign-up bonuses as recurring annual value.
 Use official bank pages when possible. If unsure, mark notes clearly.`;

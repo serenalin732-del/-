@@ -1566,10 +1566,15 @@ function estimatePointValue(program = "") {
   return 0.01;
 }
 
+// Reward bonus categories the card rules actually carry rates for.
+const REWARD_CATEGORIES = ["groceries", "dining", "gas_ev", "hotel", "flight", "travel", "services", "everyday"];
+
 // Best-effort card-network inference (used for merchant acceptance checks).
-// Prefers an explicit card.network; otherwise guesses from the card/issuer name.
+// Prefers an explicit network from the AI reward rules / card; else guesses
+// from the card/issuer name.
 function cardNetwork(card = {}) {
-  if (card.network) return String(card.network).toLowerCase();
+  const explicit = card.network || card.rewardRules?.network;
+  if (explicit) return String(explicit).toLowerCase().trim();
   const text = `${card.cardName || ""} ${card.issuer || ""} ${card.nickname || ""}`.toLowerCase();
   if (/amex|american express|membership reward|delta skymiles|platinum card|gold card|blue cash|hilton honors|bonvoy brilliant|business platinum|business gold|green card/.test(text)) return "amex";
   if (/discover/.test(text)) return "discover";
@@ -1578,18 +1583,26 @@ function cardNetwork(card = {}) {
   return "";
 }
 
-// Well-known US merchant network restrictions. Returns the accepted networks,
-// or null when there is no known restriction.
-function merchantAcceptedNetworks(merchant = "") {
+// Confident, hardcoded US merchant network rules (the AI insight covers the
+// long tail). Returns { accepted, blocked } where either may be null.
+function merchantNetworkRule(merchant = "") {
   const text = String(merchant).toLowerCase();
-  if (/costco/.test(text)) return ["visa"]; // Costco US accepts Visa credit cards only
-  return null;
+  if (/costco/.test(text)) return { accepted: ["visa"], blocked: null }; // Costco US: Visa only
+  if (/restaurant depot|smart\s*&?\s*final|cash\s*&?\s*carry/.test(text)) return { accepted: null, blocked: ["amex"] };
+  return { accepted: null, blocked: null };
 }
 
-function optimizeWalletSpend(merchant = "", amount = 0) {
-  const category = normalizeRewardCategory(merchant);
+// AI merchant insight cache (keyed by lowercased merchant) so we don't re-call.
+const merchantInsightCache = new Map();
+
+function optimizeWalletSpend(merchant = "", amount = 0, insight = null) {
+  const category = (insight?.category && REWARD_CATEGORIES.includes(insight.category))
+    ? insight.category
+    : normalizeRewardCategory(merchant);
   const spend = Math.max(0, Number(amount || 0));
-  const accepted = merchantAcceptedNetworks(merchant);
+  const rule = merchantNetworkRule(merchant);
+  const accepted = rule.accepted; // array or null
+  const blocked = new Set([...(rule.blocked || []), ...((insight?.notAcceptedNetworks) || [])]);
   return data.cards
     .filter(card => getCardRewardRules(card).official)
     .map(card => {
@@ -1599,7 +1612,11 @@ function optimizeWalletSpend(merchant = "", amount = 0) {
       const centsPerPoint = estimatePointValue(rules.program);
       const network = cardNetwork(card);
       // Only flag as not-accepted when we are confident about the card's network.
-      const acceptedHere = !accepted || !network || accepted.includes(network);
+      let acceptedHere = true;
+      if (network) {
+        if (accepted && !accepted.includes(network)) acceptedHere = false;
+        if (blocked.has(network)) acceptedHere = false;
+      }
       return {
         card,
         category,
@@ -1609,6 +1626,7 @@ function optimizeWalletSpend(merchant = "", amount = 0) {
         program: rules.program || "Rewards",
         network,
         acceptedHere,
+        condition: rules.conditions?.[category] || "",
         acceptNote: acceptedHere ? "" : `${merchant.trim()} 可能不接受 ${network.toUpperCase()} 卡`
       };
     })
@@ -1618,6 +1636,34 @@ function optimizeWalletSpend(merchant = "", amount = 0) {
       b.estimatedValue - a.estimatedValue ||
       b.multiplier - a.multiplier
     );
+}
+
+// Ask the Worker's AI to classify the merchant + acceptance + portal note.
+// Returns null when AI is unavailable; results are cached per merchant.
+async function fetchMerchantInsight(merchant) {
+  const key = merchant.trim().toLowerCase();
+  if (merchantInsightCache.has(key)) return merchantInsightCache.get(key);
+  if (!automationSettings.workerUrl || !supabaseClient || !currentUser) return null;
+  try {
+    const token = (await supabaseClient.auth.getSession())?.data?.session?.access_token;
+    if (!token) return null;
+    const res = await fetchWithTimeout(`${automationSettings.workerUrl.replace(/\/$/, "")}/merchant-insight`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ merchant, ...aiRequestFields() })
+    }, 20000);
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !payload.ok) return null;
+    const insight = {
+      category: String(payload.category || "").toLowerCase().trim(),
+      notAcceptedNetworks: (payload.notAcceptedNetworks || []).map(n => String(n).toLowerCase().trim()),
+      portalNote: String(payload.portalNote || "").trim()
+    };
+    merchantInsightCache.set(key, insight);
+    return insight;
+  } catch {
+    return null;
+  }
 }
 
 function render() {
@@ -3233,16 +3279,12 @@ document.addEventListener("click", async event => {
   }
 });
 
-byId("walletOptimizerForm")?.addEventListener("submit", event => {
-  event.preventDefault();
-  const merchant = byId("walletMerchantInput").value.trim();
-  const amount = Number(byId("walletAmountInput").value || 0);
-  if (!merchant || amount <= 0) {
-    byId("walletOptimizerResult").innerHTML = empty("Enter a merchant/category and amount.");
-    return;
-  }
-  const results = optimizeWalletSpend(merchant, amount).slice(0, 3);
-  byId("walletOptimizerResult").innerHTML = results.length ? results.map((result, index) => {
+function renderWalletResults(merchant, amount, insight, loadingAI = false) {
+  const results = optimizeWalletSpend(merchant, amount, insight).slice(0, 3);
+  const banner = loadingAI
+    ? `<div class="item-meta wallet-ai-note">🤖 正在用 AI 核实商户类别与受理情况…</div>`
+    : (insight?.portalNote ? `<div class="item-meta accept-warning">ℹ️ ${escapeHtml(insight.portalNote)}</div>` : "");
+  const cards = results.length ? results.map((result, index) => {
     const isTop = index === 0 && result.acceptedHere;
     return `
     <article class="list-item wallet-result ${isTop ? "best" : ""} ${result.acceptedHere ? "" : "not-accepted"}">
@@ -3254,6 +3296,7 @@ byId("walletOptimizerForm")?.addEventListener("submit", event => {
         <span class="tag ${isTop ? "blue" : "warn"}">${number(result.points)} pts</span>
       </div>
       ${result.acceptNote ? `<div class="item-meta accept-warning">⚠️ ${escapeHtml(result.acceptNote)}</div>` : ""}
+      ${result.condition ? `<div class="item-meta wallet-condition">📍 ${escapeHtml(result.condition)}</div>` : ""}
       <div class="summary-strip">
         <span>Spend ${dollars(amount)}</span>
         <span>Estimated value ${dollars(result.estimatedValue)}</span>
@@ -3261,17 +3304,40 @@ byId("walletOptimizerForm")?.addEventListener("submit", event => {
       </div>
     </article>`;
   }).join("") : empty("Add reward rules to cards before using Wallet Optimizer.");
+  byId("walletOptimizerResult").innerHTML = banner + cards;
+}
+
+byId("walletOptimizerForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const merchant = byId("walletMerchantInput").value.trim();
+  const amount = Number(byId("walletAmountInput").value || 0);
+  if (!merchant || amount <= 0) {
+    byId("walletOptimizerResult").innerHTML = empty("Enter a merchant/category and amount.");
+    return;
+  }
+  // Instant result from local rules, then refine with the AI insight (cached).
+  const cached = merchantInsightCache.get(merchant.toLowerCase()) || null;
+  renderWalletResults(merchant, amount, cached, !cached);
+  if (!cached) {
+    const insight = await fetchMerchantInsight(merchant);
+    renderWalletResults(merchant, amount, insight, false);
+  }
 });
 
 function normalizeRewardCategory(value = "") {
   const text = String(value).toLowerCase();
-  if (/grocery|groceries|supermarket|买菜|market|whole foods|trader joe|safeway|kroger/.test(text)) return "groceries";
-  if (/dining|restaurant|food|cafe|coffee|餐厅|panera|doordash|ubereats|uber eats|resy/.test(text)) return "dining";
-  if (/gas|fuel|ev|加油|充电|shell|chevron|exxon|bp|chargepoint/.test(text)) return "gas_ev";
-  if (/hotel|lodging|accommodation|酒店|airbnb|marriott|hilton|hyatt/.test(text)) return "hotel";
-  if (/flight|airline|机票|delta|united|american airlines|southwest|jetblue/.test(text)) return "flight";
-  if (/travel|transit|taxi|parking|uber|lyft|旅行|交通/.test(text)) return "travel";
-  if (/subscription|streaming|digital|entertainment|google|claude|openai|service|服务|订阅/.test(text)) return "services";
+  if (/grocery|groceries|supermarket|超市|买菜|生鲜|market|whole foods|trader joe|safeway|kroger|publix|aldi|wegmans|sprouts/.test(text)) return "groceries";
+  if (/dining|restaurant|food|cafe|coffee|餐厅|吃饭|外卖|panera|starbucks|doordash|ubereats|uber eats|grubhub|resy|bar|brewery/.test(text)) return "dining";
+  if (/\bgas\b|fuel|\bev\b|加油|充电|gas station|shell|chevron|exxon|mobil|\bbp\b|costco gas|chargepoint|evgo|electrify|supercharger/.test(text)) return "gas_ev";
+  if (/hotel|lodging|accommodation|酒店|住宿|民宿|airbnb|vrbo|marriott|hilton|hyatt|ihg|wyndham|resort|motel/.test(text)) return "hotel";
+  if (/flight|airline|airfare|机票|航班|delta|united|american airlines|southwest|jetblue|alaska air|spirit|frontier/.test(text)) return "flight";
+  if (/travel|transit|taxi|parking|地铁|公交|交通|旅行|出行|uber|lyft|amtrak|train|rail|rental car|avis|hertz|cruise|tours?/.test(text)) return "travel";
+  if (/subscription|streaming|digital|entertainment|订阅|服务|流媒体|netflix|spotify|hulu|disney|youtube|google|icloud|adobe|claude|openai|software|phone|internet|utilit/.test(text)) return "services";
+  // Categories most cards earn only the base/everyday rate on:
+  if (/cloth|apparel|fashion|衣服|服装|鞋|shoe|nike|uniqlo|zara|h&m|nordstrom|macy|department store|百货/.test(text)) return "everyday";
+  if (/furnitur|家具|家居|home improvement|home depot|lowe'?s|ikea|wayfair|hardware|建材/.test(text)) return "everyday";
+  if (/pharmac|drugstore|药店|药房|cvs|walgreens|rite aid/.test(text)) return "everyday";
+  if (/online|网购|电商|amazon|walmart|target|best buy|ebay|warehouse|wholesale|costco|sam'?s club|bj'?s/.test(text)) return "everyday";
   return "everyday";
 }
 
@@ -3284,16 +3350,20 @@ function getCardRewardRules(card = {}) {
   if (card.rewardRules?.program || card.rewardRules?.rates) {
     return {
       program: card.rewardRules.program || "Rewards",
+      network: card.rewardRules.network || "",
       defaultRate: Number(card.rewardRules.defaultRate || 1),
       rates: card.rewardRules.rates || {},
+      conditions: card.rewardRules.conditions || {},
       sourceUrl: card.sourceUrls?.[0] || card.sourceUrl || "",
       official: true
     };
   }
   return {
     program: t("needOfficialRules"),
+    network: "",
     defaultRate: 1,
     rates: {},
+    conditions: {},
     sourceUrl: "",
     official: false
   };
