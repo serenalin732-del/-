@@ -1,7 +1,8 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
+    const origin = corsOrigin(request, env);
+    if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), origin);
 
     try {
       if (url.pathname === "/health" && request.method === "GET") {
@@ -16,20 +17,20 @@ export default {
           defaultProvider: (env.AI_PROVIDER || "openai").toLowerCase(),
           aiModelDefaults: PROVIDER_DEFAULTS,
           aiTaskTiers: TASK_TIER
-        }));
+        }), origin);
       }
 
-      if (url.pathname === "/api-keys" && request.method === "GET") return cors(await listApiKeys(request, env));
-      if (url.pathname === "/api-keys" && request.method === "POST") return cors(await saveApiKey(request, env));
-      if (url.pathname === "/card-benefits" && request.method === "POST") return cors(await suggestCardBenefits(request, env));
-      if (url.pathname === "/ai-summary" && request.method === "POST") return cors(await createAiSummary(request, env));
-      if (url.pathname === "/parse-statement" && request.method === "POST") return cors(await parseStatement(request, env));
-      if (url.pathname === "/send-reminders" && request.method === "POST") return cors(await sendDueReminders(env));
-      if (url.pathname === "/test-email" && request.method === "POST") return cors(await sendTestEmail(request, env));
+      if (url.pathname === "/api-keys" && request.method === "GET") return cors(await listApiKeys(request, env), origin);
+      if (url.pathname === "/api-keys" && request.method === "POST") return cors(await saveApiKey(request, env), origin);
+      if (url.pathname === "/card-benefits" && request.method === "POST") return cors(await suggestCardBenefits(request, env), origin);
+      if (url.pathname === "/ai-summary" && request.method === "POST") return cors(await createAiSummary(request, env), origin);
+      if (url.pathname === "/parse-statement" && request.method === "POST") return cors(await parseStatement(request, env), origin);
+      if (url.pathname === "/send-reminders" && request.method === "POST") return cors(await sendDueReminders(env), origin);
+      if (url.pathname === "/test-email" && request.method === "POST") return cors(await sendTestEmail(request, env), origin);
 
-      return cors(json({ ok: false, error: "Not found" }, 404));
+      return cors(json({ ok: false, error: "Not found" }, 404), origin);
     } catch (error) {
-      return cors(json({ ok: false, error: error.message || "Worker error" }, 500));
+      return cors(json({ ok: false, error: error.message || "Worker error" }, 500), origin);
     }
   },
 
@@ -38,8 +39,19 @@ export default {
   }
 };
 
-function cors(response) {
-  response.headers.set("access-control-allow-origin", "*");
+// CORS origin policy. Set ALLOWED_ORIGINS (comma-separated, e.g.
+// "https://benefit-butler.pages.dev,https://your-domain.com") in the Worker
+// variables to restrict access. If unset, stays "*" (backward compatible).
+function corsOrigin(request, env) {
+  const allow = String(env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+  if (!allow.length) return "*";
+  const origin = request.headers.get("origin") || "";
+  return allow.includes(origin) ? origin : allow[0];
+}
+
+function cors(response, origin = "*") {
+  response.headers.set("access-control-allow-origin", origin);
+  if (origin !== "*") response.headers.set("vary", "Origin");
   response.headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
   response.headers.set("access-control-allow-headers", "authorization,content-type");
   return response;
