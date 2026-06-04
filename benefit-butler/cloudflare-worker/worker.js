@@ -25,7 +25,12 @@ export default {
       if (url.pathname === "/card-benefits" && request.method === "POST") return cors(await suggestCardBenefits(request, env), origin);
       if (url.pathname === "/ai-summary" && request.method === "POST") return cors(await createAiSummary(request, env), origin);
       if (url.pathname === "/parse-statement" && request.method === "POST") return cors(await parseStatement(request, env), origin);
-      if (url.pathname === "/send-reminders" && request.method === "POST") return cors(await sendDueReminders(env), origin);
+      // Manual trigger is scoped to the signed-in user only (their own private
+      // reminders). The unauthenticated, all-users run happens via scheduled().
+      if (url.pathname === "/send-reminders" && request.method === "POST") {
+        const reminderUser = await getUser(request, env);
+        return cors(await sendDueReminders(env, reminderUser.id), origin);
+      }
       if (url.pathname === "/test-email" && request.method === "POST") return cors(await sendTestEmail(request, env), origin);
       if (url.pathname === "/test-key" && request.method === "POST") return cors(await testKey(request, env), origin);
       if (url.pathname === "/merchant-insight" && request.method === "POST") return cors(await merchantInsight(request, env), origin);
@@ -845,7 +850,10 @@ function todayInTimeZone(timeZone) {
   }
 }
 
-async function sendDueReminders(env) {
+// userId = null -> process every user (the daily cron). userId set -> only that
+// user's own reminders (the manual "send to myself" test from the app), so one
+// person's test never triggers other users' emails.
+async function sendDueReminders(env, userId = null) {
   if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
     return json({ ok: true, sent: 0, message: "Email provider is not configured." });
   }
@@ -890,6 +898,7 @@ async function sendDueReminders(env) {
   }
 
   for (const card of cards || []) {
+    if (userId && card.user_id !== userId) continue;
     const settings = settingsByUser.get(card.user_id) || {};
     if (settings.email_reminder_enabled === false) continue;
     if (!["email", "both"].includes(card.reminder_channel || "calendar")) continue;
@@ -921,6 +930,7 @@ async function sendDueReminders(env) {
 
   const cardsById = new Map((cards || []).map(card => [card.id, card]));
   for (const benefit of benefits || []) {
+    if (userId && benefit.user_id !== userId) continue;
     const settings = settingsByUser.get(benefit.user_id) || {};
     if (settings.email_reminder_enabled === false) continue;
     const to = settings.default_reminder_email;

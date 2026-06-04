@@ -1826,7 +1826,7 @@ const languageText = {
     workerUrl: "Cloudflare Worker URL",
     saveTestKey: "保存并测试 Key",
     testEmail: "发送测试邮件",
-    sendRemindersNow: "立即发送提醒",
+    sendRemindersNow: "测试：给我自己发一次",
     aiModeHelp: "当前默认模型：{model}。系统会按任务自动路由：Fast 处理解析，Balanced 处理日常分析，Advisor 处理续卡和高级顾问报告。",
     aiSummary: "AI 总结",
     generateSummary: "生成当前总结",
@@ -1974,7 +1974,7 @@ const languageText = {
     workerUrl: "Cloudflare Worker URL",
     saveTestKey: "Save and test key",
     testEmail: "Send test email",
-    sendRemindersNow: "Send reminders now",
+    sendRemindersNow: "Test: send my reminders now",
     aiModeHelp: "Current default model: {model}. The system routes by task: Fast for parsing, Balanced for daily analysis, Advisor for renewal and advanced reports.",
     aiSummary: "AI Summary",
     generateSummary: "Generate summary",
@@ -3317,8 +3317,9 @@ document.addEventListener("click", async event => {
   }
 });
 
-// Manually trigger the backend reminder run (same logic as the daily cron) so
-// you can verify delivery without waiting for the scheduled time.
+// Test helper only: runs the real reminder logic for the SIGNED-IN USER ONLY so
+// you can verify delivery without waiting for the daily cron. The actual product
+// feature is the automatic scheduled run; this button never touches other users.
 document.addEventListener("click", async event => {
   if (event.target.id !== "sendRemindersNowButton") return;
   if (!automationSettings.workerUrl) {
@@ -3343,8 +3344,8 @@ document.addEventListener("click", async event => {
     const sent = Number(payload.sent || 0);
     setSyncStatus(
       payload.message ? payload.message
-      : sent > 0 ? `已发送 ${sent} 封提醒，请检查收件箱（含垃圾邮件）。`
-      : "当前没有到期的卡片或福利需要提醒（这是正常的）。"
+      : sent > 0 ? `测试：已给你自己发送 ${sent} 封提醒，请检查收件箱（含垃圾邮件）。`
+      : "测试：你当前没有到期的卡片或福利需要提醒（这是正常的）。"
     );
   } catch (error) {
     setSyncStatus(error.message || t("emailProviderMissing"), "warn");
