@@ -170,6 +170,7 @@ Return only JSON:
   "rewardRules": {"program": "", "defaultRate": 1, "rates": {"dining": 1, "groceries": 1, "gas_ev": 1, "hotel": 1, "flight": 1, "travel": 1, "everyday": 1}},
   "benefits": [{
     "name": "",
+    "benefitType": "recurring_credit|annual_perk|welcome_bonus|one_time|elite_status|other",
     "value": 0,
     "period": "annual|semiannual|monthly|quarterly|one_time",
     "installmentValue": 0,
@@ -184,6 +185,7 @@ Return only JSON:
   "notes": []
 }
 For each benefit, be explicit about whether the value is total annual value or per-month/per-period value. If the official page says monthly credits expire or do not roll over, say that. If not confirmed, use "unknown" and state that the user should verify in their account.
+Classify each item with benefitType: sign-up / welcome offers => "welcome_bonus"; credits that recur (monthly/quarterly/semiannual/annual statement credits) => "recurring_credit"; yearly perks like a free night award or companion pass => "annual_perk"; one-time credits such as Global Entry/TSA every 4 years => "one_time"; elite or loyalty status => "elite_status"; anything else => "other". Do not present welcome/sign-up bonuses as recurring annual value.
 Use official bank pages when possible. If unsure, mark notes clearly.`;
 
   const result = await callAIJson({ env, apiKey, cfg, task: "cardBenefits", content: prompt, webSearch: true });
@@ -233,6 +235,8 @@ function normalizeCardBenefitResult(result = {}, fallbackBank = "", fallbackCard
     notes: result.notes || [],
     benefits: (result.benefits || []).map(item => ({
       name: item.name || "Unnamed benefit",
+      benefitType: String(item.benefitType || "").toLowerCase().replace(/[^a-z_]/g, "") ||
+        (String(item.period || item.cycle || "").toLowerCase() === "one_time" ? "one_time" : "recurring_credit"),
       value: Number(item.value || 0),
       cycle: cycleMap[String(item.cycle || item.period || "calendar").toLowerCase()] || "calendar",
       activation: item.requiresActivation === true || String(item.activation || "").toLowerCase() === "yes" ? "yes" : "no",

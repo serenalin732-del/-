@@ -395,6 +395,94 @@ function aiRequestFields() {
   };
 }
 
+const BENEFIT_TYPE_LABELS = {
+  recurring_credit: { zh: "经常性额度", en: "Recurring credit" },
+  annual_perk: { zh: "年度福利", en: "Annual perk" },
+  welcome_bonus: { zh: "开卡奖励", en: "Welcome bonus" },
+  one_time: { zh: "一次性", en: "One-time" },
+  elite_status: { zh: "会员等级", en: "Elite status" },
+  other: { zh: "其他", en: "Other" }
+};
+
+function benefitTypeLabel(type) {
+  const item = BENEFIT_TYPE_LABELS[type] || BENEFIT_TYPE_LABELS.other;
+  return interfaceLanguage === "zh" ? item.zh : item.en;
+}
+
+// One-time and welcome bonuses are not recurring annual value, so they are
+// off by default in the review list.
+function isRecurringBenefitType(type) {
+  return !["welcome_bonus", "one_time"].includes(type);
+}
+
+// Let the user confirm which AI-fetched benefits to actually track. Nothing is
+// added until they click "add selected".
+function presentBenefitReview(cardId, drafts) {
+  const list = (drafts || [])
+    .slice()
+    .sort((a, b) => Number(isRecurringBenefitType(b.benefitType)) - Number(isRecurringBenefitType(a.benefitType)));
+  if (!list.length) {
+    setSyncStatus(interfaceLanguage === "zh" ? "AI 未返回可添加的福利。" : "AI returned no benefits to add.");
+    return;
+  }
+  let backdrop = byId("aiReviewModal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "aiReviewModal";
+    backdrop.className = "modal-backdrop";
+    document.body.appendChild(backdrop);
+  }
+  const rows = list.map((b, index) => {
+    const recurring = isRecurringBenefitType(b.benefitType);
+    const tone = recurring ? "blue" : "warn";
+    const valueText = b.value > 0 ? dollars(b.value) : "";
+    return `
+      <label class="list-item ai-review-row">
+        <input type="checkbox" data-review-index="${index}" ${recurring ? "checked" : ""}>
+        <div>
+          <div class="item-top">
+            <strong>${escapeHtml(b.name)}</strong>
+            <span class="tag ${tone}">${escapeHtml(benefitTypeLabel(b.benefitType))}</span>
+          </div>
+          <div class="item-meta">${escapeHtml(cycleText(b.cycle))}${valueText ? " · " + escapeHtml(valueText) : ""}</div>
+          ${b.notes ? `<div class="item-meta">${escapeHtml(b.notes)}</div>` : ""}
+        </div>
+      </label>`;
+  }).join("");
+  const zh = interfaceLanguage === "zh";
+  backdrop.innerHTML = `
+    <div class="modal ai-review-modal">
+      <h3>${zh ? "确认要追踪的福利" : "Confirm benefits to track"}</h3>
+      <p class="item-meta">${zh
+        ? "开卡奖励 / 一次性默认不勾选（它们不是每年重复的福利）。勾选你想加入年度追踪的项，可随后再手动编辑。"
+        : "Welcome / one-time bonuses are unchecked by default (not recurring). Tick what you want tracked; you can edit later."}</p>
+      <div class="stack-list" id="aiReviewList">${rows}</div>
+      <div class="form-actions">
+        <button class="secondary-button" type="button" id="aiReviewCancel">${zh ? "取消" : "Cancel"}</button>
+        <button class="primary-button" type="button" id="aiReviewConfirm">${zh ? "添加所选" : "Add selected"}</button>
+      </div>
+    </div>`;
+  backdrop.hidden = false;
+  byId("aiReviewCancel").onclick = () => { backdrop.hidden = true; };
+  byId("aiReviewConfirm").onclick = async () => {
+    const selected = [];
+    backdrop.querySelectorAll("[data-review-index]").forEach(input => {
+      if (input.checked) selected.push(list[Number(input.dataset.reviewIndex)]);
+    });
+    backdrop.hidden = true;
+    let added = 0;
+    selected.forEach(draft => {
+      const { benefitType, ...benefit } = draft;
+      const upserted = upsertLocalBenefit({ ...benefit, id: crypto.randomUUID() });
+      if (!upserted.merged) added += 1;
+    });
+    render();
+    const cardBenefits = data.benefits.filter(item => item.cardId === cardId);
+    await Promise.all(cardBenefits.map(upsertRemoteBenefit));
+    setSyncStatus(zh ? `已添加 ${added} 项福利，请核对官网后使用` : `Added ${added} benefits — verify against the issuer site.`);
+  };
+}
+
 function cardMetadataCacheKey() {
   return `${storeKey}:card-metadata:${currentUser?.id || "local"}`;
 }
@@ -3788,9 +3876,9 @@ document.addEventListener("click", async event => {
     else data.cards.push(card);
 
     const sourceNote = (aiResult.sourceUrls || []).slice(0, 3).join(" | ");
-    const newBenefits = [];
-    (aiResult.benefits || []).map(item => ({
-      id: crypto.randomUUID(),
+    // Build drafts but DON'T add them yet — the user reviews them first so
+    // one-time / welcome bonuses don't get tracked as recurring annual value.
+    const drafts = (aiResult.benefits || []).map(item => ({
       cardId,
       name: item.name || "Unnamed benefit",
       value: Number(item.value || 0),
@@ -3799,17 +3887,14 @@ document.addEventListener("click", async event => {
       expires: item.cycle === "calendar" ? `${today.getFullYear()}-12-31` : "",
       activation: item.activation === "yes" ? "yes" : "no",
       tracking: ["auto", "review", "manual"].includes(item.tracking) ? item.tracking : "review",
+      benefitType: String(item.benefitType || "").toLowerCase() || "recurring_credit",
       notes: `${item.notes || "AI 建议，建议核对官网。"}${sourceNote ? ` 来源：${sourceNote}` : ""}`
-    })).forEach(benefit => {
-      const upserted = upsertLocalBenefit(benefit);
-      if (!upserted.merged) newBenefits.push(upserted.benefit);
-    });
+    }));
 
     render();
     await upsertRemoteCard(card);
-    const cardBenefits = data.benefits.filter(benefit => benefit.cardId === cardId);
-    await Promise.all(cardBenefits.map(upsertRemoteBenefit));
-    setSyncStatus(newBenefits.length ? `已添加 ${newBenefits.length} 项福利草稿，请核对官网后使用` : "AI 返回的福利已和现有记录合并，请核对卡片资料。");
+    setSyncStatus(`卡片已保存，请在弹窗里确认要追踪的福利（共 ${drafts.length} 项）`);
+    presentBenefitReview(cardId, drafts);
   } catch (error) {
     setSyncStatus(error.name === "AbortError" ? "AI 检索超时：官网搜索可能较慢，请稍后重试，或先保存卡片后再获取。" : `AI 获取失败：${error.message || "请检查 Worker、API key、模型和网络搜索配置。"}`, "warn");
   } finally {
