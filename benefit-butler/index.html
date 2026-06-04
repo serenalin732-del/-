@@ -665,17 +665,24 @@
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Google Gemini</option>
+                  <option value="custom">自定义 / OpenAI 兼容</option>
                 </select>
               </label>
               <label>AI Mode
                 <select id="aiModeInput">
-                  <option value="fast">Fast - GPT-5 mini</option>
-                  <option value="balanced">Balanced - GPT-5 mini</option>
-                  <option value="advisor">Advisor - GPT-5</option>
+                  <option value="fast">Fast（便宜）</option>
+                  <option value="balanced">Balanced（日常）</option>
+                  <option value="advisor">Advisor（强模型）</option>
                 </select>
               </label>
+              <label>模型名（留空＝按 Provider 默认自动选）
+                <input id="aiModelInput" type="text" autocomplete="off" placeholder="gpt-4.1-mini / claude-haiku-4-5 / gemini-2.0-flash">
+              </label>
+              <label>Base URL（仅自定义 Provider 需要）
+                <input id="aiBaseUrlInput" type="url" placeholder="https://openrouter.ai/api/v1">
+              </label>
               <label>API Key
-                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-...">
+                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="你的 provider key">
               </label>
               <label class="full-row">Cloudflare Worker URL
                 <input id="workerUrlInput" type="url" placeholder="https://your-worker.your-subdomain.workers.dev">

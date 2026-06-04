@@ -5,25 +5,25 @@ const hasSupabaseSettings = Boolean(supabaseSettings.url && supabaseSettings.ano
 const maxUploadBytes = 10 * 1024 * 1024;
 const AI_ROUTER_MODES = {
   fast: {
-    model: "gpt-5-mini",
-    labelZh: "Fast - GPT-5 mini",
-    labelEn: "Fast - GPT-5 mini",
-    descriptionZh: "适合福利生成、商户分类和 Statement 解析。DeepSeek Flash 可在后续接入独立 provider。",
-    descriptionEn: "For benefit generation, merchant categorization, and statement parsing. DeepSeek Flash can be added later as a separate provider."
+    model: "auto",
+    labelZh: "Fast（便宜）",
+    labelEn: "Fast (cheaper)",
+    descriptionZh: "解析账单、商户分类、检索官网福利等用便宜模型。",
+    descriptionEn: "Cheap model for parsing, categorization, and benefit lookup."
   },
   balanced: {
-    model: "gpt-5-mini",
-    labelZh: "Balanced - GPT-5 mini",
-    labelEn: "Balanced - GPT-5 mini",
-    descriptionZh: "默认日常模式，适合 AI 总结、ROI 分析和普通组合判断。",
-    descriptionEn: "Default daily mode for summaries, ROI analysis, and regular portfolio checks."
+    model: "auto",
+    labelZh: "Balanced（日常）",
+    labelEn: "Balanced (daily)",
+    descriptionZh: "日常 AI 总结与组合分析。",
+    descriptionEn: "Daily AI summaries and portfolio checks."
   },
   advisor: {
-    model: "gpt-5",
-    labelZh: "Advisor - GPT-5",
-    labelEn: "Advisor - GPT-5",
-    descriptionZh: "适合续卡分析、Portfolio 分析和高级顾问报告。",
-    descriptionEn: "For renewal decisions, portfolio analysis, and advanced advisor reports."
+    model: "auto",
+    labelZh: "Advisor（强模型）",
+    labelEn: "Advisor (stronger)",
+    descriptionZh: "续卡决策与高级顾问报告才用强模型。",
+    descriptionEn: "Stronger model only for renewal decisions and advisor reports."
   }
 };
 const allowedUploadTypes = [
@@ -69,6 +69,8 @@ let automationSettings = {
   monthlyDigest: "yes",
   aiProvider: "openai",
   aiMode: "balanced",
+  aiModel: "",
+  aiBaseUrl: "",
   workerUrl: supabaseSettings.workerUrl || ""
 };
 let apiKeyStatus = [];
@@ -366,7 +368,9 @@ function saveAutomationPreferences() {
   localStorage.setItem(automationPreferencesKey(), JSON.stringify({
     aiMode: automationSettings.aiMode || automationSettings.aiQuality || "balanced",
     workerUrl: automationSettings.workerUrl || "",
-    aiProvider: automationSettings.aiProvider || "openai"
+    aiProvider: automationSettings.aiProvider || "openai",
+    aiModel: automationSettings.aiModel || "",
+    aiBaseUrl: automationSettings.aiBaseUrl || ""
   }));
 }
 
@@ -378,6 +382,17 @@ function getAiModel(task = "balanced") {
   if (task === "advisor" || task === "advanced") return AI_ROUTER_MODES.advisor.model;
   if (task === "fast" || task === "statement" || task === "benefits" || task === "merchant") return AI_ROUTER_MODES.fast.model;
   return getAiModeConfig().model;
+}
+
+// Fields every Worker AI call sends so the backend can route to the chosen
+// provider/model. The Worker picks a cheap vs strong model per task; leaving
+// aiModel blank uses that automatic choice.
+function aiRequestFields() {
+  return {
+    provider: automationSettings.aiProvider || "openai",
+    aiModel: (automationSettings.aiModel || "").trim(),
+    aiBaseUrl: (automationSettings.aiBaseUrl || "").trim()
+  };
 }
 
 function cardMetadataCacheKey() {
@@ -698,6 +713,8 @@ function fromDbAutomationSettings(row) {
     monthlyDigest: row.monthly_digest_enabled ? "yes" : "no",
     aiProvider: row.ai_provider || "openai",
     aiMode: localPreferences.aiMode || localPreferences.aiQuality || "balanced",
+    aiModel: row.ai_model || localPreferences.aiModel || "",
+    aiBaseUrl: row.ai_base_url || localPreferences.aiBaseUrl || "",
     workerUrl: row.worker_url || supabaseSettings.workerUrl || ""
   };
 }
@@ -2049,8 +2066,9 @@ function renderSettings() {
   byId("monthlyDigestInput").value = automationSettings.monthlyDigest;
   byId("aiProviderInput").value = automationSettings.aiProvider;
   if (byId("aiModeInput")) byId("aiModeInput").value = automationSettings.aiMode || automationSettings.aiQuality || "balanced";
+  if (byId("aiModelInput")) byId("aiModelInput").value = automationSettings.aiModel || "";
+  if (byId("aiBaseUrlInput")) byId("aiBaseUrlInput").value = automationSettings.aiBaseUrl || "";
   byId("workerUrlInput").value = automationSettings.workerUrl;
-  const modeConfig = getAiModeConfig();
   let modeHelp = byId("aiModeHelp");
   if (!modeHelp && byId("apiKeyForm")) {
     modeHelp = document.createElement("div");
@@ -2059,8 +2077,9 @@ function renderSettings() {
     byId("apiKeyForm").insertBefore(modeHelp, byId("apiKeyForm").querySelector(".form-actions"));
   }
   if (modeHelp) {
-    const description = interfaceLanguage === "zh" ? modeConfig.descriptionZh : modeConfig.descriptionEn;
-    modeHelp.textContent = `${t("aiModeHelp").replace("{model}", modeConfig.model)} ${description}`;
+    modeHelp.textContent = interfaceLanguage === "zh"
+      ? `当前 Provider：${automationSettings.aiProvider}。系统按任务自动选模型：解析/检索用便宜档，高级建议才用强档。"模型名"留空＝用该 Provider 的默认；自定义 Provider 需填 Base URL。每个 Provider 各存一份 key。`
+      : `Provider: ${automationSettings.aiProvider}. Models are auto-selected per task (cheap for parsing/lookup, strong only for advisor). Leave "Model" blank to use the provider default; custom providers need a Base URL. A key is stored per provider.`;
   }
   let router = byId("aiRouterPreview");
   if (!router && byId("apiKeyStatusList")) {
@@ -2077,7 +2096,6 @@ function renderSettings() {
       return `
       <article class="${active ? "active" : ""}">
         <strong>${escapeHtml(name)}</strong>
-        <span>${escapeHtml(item.model)}</span>
         <small>${escapeHtml(use)}</small>
       </article>
     `; }).join("");
@@ -2819,6 +2837,8 @@ byId("apiKeyForm").addEventListener("submit", async event => {
   const workerUrl = byId("workerUrlInput").value.trim();
   automationSettings.aiProvider = provider;
   automationSettings.aiMode = byId("aiModeInput")?.value || "balanced";
+  automationSettings.aiModel = byId("aiModelInput")?.value.trim() || "";
+  automationSettings.aiBaseUrl = byId("aiBaseUrlInput")?.value.trim() || "";
   automationSettings.workerUrl = workerUrl;
   saveAutomationPreferences();
   if (!workerUrl) {
@@ -2840,7 +2860,7 @@ byId("apiKeyForm").addEventListener("submit", async event => {
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {})
       },
-      body: JSON.stringify({ provider, apiKey, model: getAiModel("balanced"), aiMode: automationSettings.aiMode || "balanced" })
+      body: JSON.stringify({ provider, apiKey })
     }, 12000);
     if (!response.ok) throw new Error(await response.text());
     const payload = await response.json();
@@ -2883,8 +2903,8 @@ byId("generateAiSummaryButton").addEventListener("click", async event => {
           benefits: data.benefits,
           rewards: data.rewards,
           localSummary: summary,
-          model: getAiModel("advisor"),
-          aiMode: automationSettings.aiMode || "balanced"
+          summaryType: "advisor",
+          ...aiRequestFields()
         })
       }, 12000);
       if (response.ok) summary = await response.json();
@@ -2929,8 +2949,7 @@ byId("statementParseForm").addEventListener("submit", async event => {
         documentId: uploaded.documentId,
         cardId: byId("statementCardSelect").value,
         cardRules: getCardRewardRules(data.cards.find(card => card.id === byId("statementCardSelect").value)),
-        model: getAiModel("statement"),
-        aiMode: automationSettings.aiMode || "balanced"
+        ...aiRequestFields()
       })
     }, 120000);
     const responseText = await response.text();
@@ -3731,7 +3750,7 @@ document.addEventListener("click", async event => {
         "content-type": "application/json",
         authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ issuer, bank: issuer, cardName, model: getAiModel("benefits"), aiMode: automationSettings.aiMode || "balanced" })
+      body: JSON.stringify({ issuer, bank: issuer, cardName, ...aiRequestFields() })
     }, 120000);
     const text = await response.text();
     const payload = text ? JSON.parse(text) : {};
