@@ -63,8 +63,10 @@ let interfaceLanguage = localStorage.getItem(`${storeKey}:language`) || "zh";
 let automationSettings = {
   emailReminderEnabled: "yes",
   defaultReminderEmail: "",
+  reminderChannel: "both",
   paymentReminderDays: 7,
-  benefitReminderDays: 14,
+  benefitReminderDays: 15,
+  benefitReminderDays2: 7,
   weeklyDigest: "yes",
   monthlyDigest: "yes",
   aiProvider: "openai",
@@ -674,13 +676,40 @@ function validateUpload(file) {
   return "";
 }
 
+// Split a comma/semicolon/whitespace separated string into trimmed emails.
+function parseEmailList(value) {
+  return String(value || "").split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+}
+
+function isValidEmailList(value) {
+  const list = parseEmailList(value);
+  return list.length > 0 && list.every(email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+}
+
+// Reads the card form's reminder fields. 'inherit' means the card follows the
+// global Settings, so we store no per-card timing/email of its own (null/empty).
+function readCardReminderInputs() {
+  const reminderChannel = byId("reminderChannelInput").value;
+  if (reminderChannel === "inherit") {
+    return { remindDays: null, reminderChannel: "inherit", reminderEmail: "" };
+  }
+  return {
+    remindDays: Number(byId("remindDaysInput").value || 0),
+    reminderChannel,
+    reminderEmail: byId("reminderEmailInput").value.trim()
+  };
+}
+
 function validateCard(card) {
   if (!card.issuer || !card.name) return "请填写银行和卡片名称。";
   if (card.last4 && !/^\d{4}$/.test(card.last4)) return "尾号必须是 4 位数字。";
   if (card.annualFee < 0) return "年费不能是负数。";
   if (card.dueDay < 1 || card.dueDay > 31) return "还款到期日必须在 1 到 31 之间。";
   if (card.remindDays < 0 || card.remindDays > 60) return "提前提醒天数必须在 0 到 60 之间。";
-  if ((card.reminderChannel === "email" || card.reminderChannel === "both") && !card.reminderEmail && !automationSettings.defaultReminderEmail) return "选择邮件提醒时，请填写提醒邮箱（或先在设置里填默认提醒邮箱）。";
+  if ((card.reminderChannel === "email" || card.reminderChannel === "both")) {
+    if (card.reminderEmail && !isValidEmailList(card.reminderEmail)) return "提醒邮箱格式不正确（多个邮箱请用逗号分隔）。";
+    if (!card.reminderEmail && !automationSettings.defaultReminderEmail && !currentUser?.email) return "选择邮件提醒时，请填写提醒邮箱（或先在设置里填默认提醒邮箱）。";
+  }
   return "";
 }
 
@@ -700,9 +729,10 @@ function validateReward(reward, file) {
 }
 
 function validateAutomationSettings(settings) {
-  if (settings.emailReminderEnabled === "yes" && settings.defaultReminderEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(settings.defaultReminderEmail)) return "默认提醒邮箱格式不正确。";
+  if (settings.emailReminderEnabled === "yes" && settings.defaultReminderEmail && !isValidEmailList(settings.defaultReminderEmail)) return "提醒邮箱格式不正确（多个邮箱请用逗号分隔）。";
   if (settings.paymentReminderDays < 0 || settings.paymentReminderDays > 60) return "还款提醒天数必须在 0 到 60 之间。";
   if (settings.benefitReminderDays < 0 || settings.benefitReminderDays > 120) return "福利提醒天数必须在 0 到 120 之间。";
+  if (settings.benefitReminderDays2 !== "" && settings.benefitReminderDays2 != null && (settings.benefitReminderDays2 < 0 || settings.benefitReminderDays2 > 120)) return "第二次福利提醒天数必须在 0 到 120 之间。";
   return "";
 }
 
@@ -761,9 +791,10 @@ function toDbCard(card) {
     holder_name: card.holder || null,
     annual_fee: card.annualFee || 0,
     due_day: card.dueDay || null,
-    reminder_days_before: card.remindDays || 0,
-    reminder_channel: card.reminderChannel || "calendar",
-    reminder_email: card.reminderEmail || null,
+    // null reminder_days_before / 'inherit' channel = follow the global defaults.
+    reminder_days_before: card.reminderChannel === "inherit" || card.remindDays == null ? null : (card.remindDays || 0),
+    reminder_channel: card.reminderChannel || "inherit",
+    reminder_email: (card.reminderChannel === "inherit" ? "" : card.reminderEmail) || null,
     anniversary_date: card.anniversary || null,
     notes: card.notes || null,
     reward_rules: card.rewardRules || null,
@@ -783,8 +814,8 @@ function fromDbCard(row) {
     holder: row.holder_name || "",
     annualFee: Number(row.annual_fee || 0),
     dueDay: Number(row.due_day || 1),
-    remindDays: Number(row.reminder_days_before || 0),
-    reminderChannel: row.reminder_channel || "calendar",
+    remindDays: row.reminder_days_before == null ? null : Number(row.reminder_days_before),
+    reminderChannel: row.reminder_channel || "inherit",
     reminderEmail: row.reminder_email || "",
     anniversary: row.anniversary_date || "",
     notes: row.notes || "",
@@ -846,8 +877,10 @@ function toDbAutomationSettings(settings) {
     user_id: requireRemoteUser(),
     email_reminder_enabled: settings.emailReminderEnabled === "yes",
     default_reminder_email: settings.defaultReminderEmail || null,
+    reminder_channel: settings.reminderChannel || "both",
     payment_reminder_days: settings.paymentReminderDays,
     benefit_reminder_days: settings.benefitReminderDays,
+    benefit_reminder_days_2: settings.benefitReminderDays2 === "" || settings.benefitReminderDays2 == null ? null : Number(settings.benefitReminderDays2),
     weekly_digest_enabled: settings.weeklyDigest === "yes",
     monthly_digest_enabled: settings.monthlyDigest === "yes",
     ai_provider: settings.aiProvider,
@@ -861,8 +894,10 @@ function fromDbAutomationSettings(row) {
   return {
     emailReminderEnabled: row.email_reminder_enabled ? "yes" : "no",
     defaultReminderEmail: row.default_reminder_email || "",
+    reminderChannel: row.reminder_channel || "both",
     paymentReminderDays: Number(row.payment_reminder_days || 7),
-    benefitReminderDays: Number(row.benefit_reminder_days || 14),
+    benefitReminderDays: Number(row.benefit_reminder_days || 15),
+    benefitReminderDays2: row.benefit_reminder_days_2 == null ? "" : Number(row.benefit_reminder_days_2),
     weeklyDigest: row.weekly_digest_enabled ? "yes" : "no",
     monthlyDigest: row.monthly_digest_enabled ? "yes" : "no",
     aiProvider: row.ai_provider || "openai",
@@ -2329,9 +2364,13 @@ function renderCardSelects() {
 
 function renderSettings() {
   byId("emailReminderEnabledInput").value = automationSettings.emailReminderEnabled;
-  byId("defaultReminderEmailInput").value = automationSettings.defaultReminderEmail;
+  // Default the reminder recipients to the signed-in account email until the
+  // user sets their own (so reminders have somewhere to go out of the box).
+  byId("defaultReminderEmailInput").value = automationSettings.defaultReminderEmail || currentUser?.email || "";
+  if (byId("reminderChannelDefaultInput")) byId("reminderChannelDefaultInput").value = automationSettings.reminderChannel || "both";
   byId("paymentReminderDaysInput").value = automationSettings.paymentReminderDays;
   byId("benefitReminderDaysInput").value = automationSettings.benefitReminderDays;
+  if (byId("benefitReminderDays2Input")) byId("benefitReminderDays2Input").value = automationSettings.benefitReminderDays2 ?? "";
   byId("weeklyDigestInput").value = automationSettings.weeklyDigest;
   byId("monthlyDigestInput").value = automationSettings.monthlyDigest;
   byId("aiProviderInput").value = automationSettings.aiProvider;
@@ -2601,8 +2640,8 @@ function renderCards() {
               <strong>${escapeHtml(perf.recommendation)}</strong>
               <div>${escapeHtml(cardRecommendationReason(card, perf))}</div>
             </div>
-            <div class="item-meta">还款到期：每月 ${card.dueDay} 日，下一次 ${formatDate(due)}；提前 ${card.remindDays} 天提醒。</div>
-            <div class="item-meta">提醒方式：${reminderChannelText(card.reminderChannel)}${card.reminderEmail ? ` • ${escapeHtml(card.reminderEmail)}` : ""}</div>
+            <div class="item-meta">还款到期：每月 ${card.dueDay} 日，下一次 ${formatDate(due)}；提前 ${effectiveCardReminder(card).remindDays} 天提醒。</div>
+            <div class="item-meta">提醒方式：${reminderChannelText(effectiveCardReminder(card).channel)}${effectiveCardReminder(card).inherited ? "（跟随全局）" : (effectiveCardReminder(card).emails ? ` • ${escapeHtml(effectiveCardReminder(card).emails)}` : "")}</div>
             <div class="rule-summary">
               <strong>${escapeHtml(ruleSummary.program)}</strong>
               <div class="item-meta">${escapeHtml(ruleSummary.rates)}</div>
@@ -2927,10 +2966,42 @@ function reminderChannelText(channel) {
   }[channel] || "手机/日历提醒";
 }
 
+// Resolves a card's effective reminder config, expanding 'inherit' into the
+// current global Settings so every screen shows the same live values.
+function effectiveCardReminder(card) {
+  const inherited = !card.reminderChannel || card.reminderChannel === "inherit";
+  const channel = inherited ? (automationSettings.reminderChannel || "both") : card.reminderChannel;
+  const remindDays = card.remindDays == null ? Number(automationSettings.paymentReminderDays || 7) : card.remindDays;
+  const emails = (inherited || !card.reminderEmail)
+    ? (automationSettings.defaultReminderEmail || currentUser?.email || "")
+    : card.reminderEmail;
+  return { inherited, channel, remindDays, emails };
+}
+
+// Shows/hides the per-card override fields based on the method selector, and
+// when switching away from 'inherit' seeds them from the live global defaults.
+function syncReminderFieldVisibility() {
+  const channel = byId("reminderChannelInput")?.value;
+  if (!channel) return;
+  const inherit = channel === "inherit";
+  const needsEmail = channel === "email" || channel === "both";
+  byId("remindDaysField")?.toggleAttribute("hidden", inherit);
+  byId("reminderEmailField")?.toggleAttribute("hidden", inherit || !needsEmail);
+  const hint = byId("reminderInheritHint");
+  if (hint) {
+    hint.hidden = !inherit;
+    if (inherit) {
+      const r = effectiveCardReminder({ reminderChannel: "inherit", remindDays: null, reminderEmail: "" });
+      hint.textContent = `跟随全局设置：${reminderChannelText(r.channel)} · 提前 ${r.remindDays} 天${(r.channel === "email" || r.channel === "both") ? ` · 发往 ${r.emails || "（请在设置页填提醒邮箱）"}` : ""}。在「设置」里统一调整。`;
+    }
+  }
+}
+
 function clearCardForm() {
   byId("cardForm").reset();
   byId("cardId").value = "";
   byId("templateSelect").value = "custom";
+  syncReminderFieldVisibility();
   renderCardDrawer();
 }
 
@@ -3030,6 +3101,15 @@ byId("openBenefitFormButton").addEventListener("click", () => {
   openBenefitDrawer();
 });
 byId("clearCardFormButton").addEventListener("click", clearCardForm);
+
+byId("reminderChannelInput").addEventListener("change", () => {
+  // Seed empty override fields from the live global defaults when leaving inherit.
+  if (byId("reminderChannelInput").value !== "inherit") {
+    if (!byId("remindDaysInput").value) byId("remindDaysInput").value = automationSettings.paymentReminderDays;
+    if (!byId("reminderEmailInput").value) byId("reminderEmailInput").value = automationSettings.defaultReminderEmail || currentUser?.email || "";
+  }
+  syncReminderFieldVisibility();
+});
 byId("closeCardFormButton").addEventListener("click", closeCardDrawer);
 byId("closeBenefitFormButton").addEventListener("click", closeBenefitDrawer);
 byId("clearBenefitFormButton").addEventListener("click", clearBenefitForm);
@@ -3089,8 +3169,10 @@ byId("automationSettingsForm").addEventListener("submit", async event => {
     ...automationSettings,
     emailReminderEnabled: byId("emailReminderEnabledInput").value,
     defaultReminderEmail: byId("defaultReminderEmailInput").value.trim(),
+    reminderChannel: byId("reminderChannelDefaultInput").value,
     paymentReminderDays: Number(byId("paymentReminderDaysInput").value || 0),
     benefitReminderDays: Number(byId("benefitReminderDaysInput").value || 0),
+    benefitReminderDays2: byId("benefitReminderDays2Input").value.trim() === "" ? "" : Number(byId("benefitReminderDays2Input").value || 0),
     weeklyDigest: byId("weeklyDigestInput").value,
     monthlyDigest: byId("monthlyDigestInput").value,
     aiMode: byId("aiModeInput")?.value || automationSettings.aiMode || "balanced"
@@ -3989,9 +4071,7 @@ byId("cardForm").addEventListener("submit", async event => {
     holder: byId("holderInput").value.trim(),
     annualFee: Number(byId("annualFeeInput").value || 0),
     dueDay: Number(byId("dueDayInput").value || 1),
-    remindDays: Number(byId("remindDaysInput").value || 0),
-    reminderChannel: byId("reminderChannelInput").value,
-    reminderEmail: byId("reminderEmailInput").value.trim(),
+    ...readCardReminderInputs(),
     anniversary: byId("anniversaryInput").value,
     notes: byId("cardNotesInput").value.trim(),
     rewardRules: existingCard?.rewardRules || null,
@@ -4156,9 +4236,7 @@ document.addEventListener("click", async event => {
       holder: byId("holderInput").value.trim(),
       annualFee: Number(byId("annualFeeInput").value || 0),
       dueDay: Number(byId("dueDayInput").value || 1),
-      remindDays: Number(byId("remindDaysInput").value || 0),
-      reminderChannel: byId("reminderChannelInput").value,
-      reminderEmail: byId("reminderEmailInput").value.trim(),
+      ...readCardReminderInputs(),
       anniversary: byId("anniversaryInput").value,
       notes: byId("cardNotesInput").value.trim(),
       rewardRules: aiResult.rewardRules || null,
@@ -4242,9 +4320,12 @@ document.addEventListener("click", async event => {
     byId("holderInput").value = card.holder;
     byId("annualFeeInput").value = card.annualFee;
     byId("dueDayInput").value = card.dueDay;
-    byId("remindDaysInput").value = card.remindDays;
-    byId("reminderChannelInput").value = card.reminderChannel || "calendar";
-    byId("reminderEmailInput").value = card.reminderEmail || "";
+    byId("reminderChannelInput").value = card.reminderChannel || "inherit";
+    // Prefill override fields from the card's own values, falling back to the
+    // live global defaults so an inheriting card starts in sync (never stale).
+    byId("remindDaysInput").value = card.remindDays == null ? automationSettings.paymentReminderDays : card.remindDays;
+    byId("reminderEmailInput").value = card.reminderEmail || automationSettings.defaultReminderEmail || currentUser?.email || "";
+    syncReminderFieldVisibility();
     byId("anniversaryInput").value = card.anniversary;
     byId("cardNotesInput").value = card.notes;
     renderCardDrawer();

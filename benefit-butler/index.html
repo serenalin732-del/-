@@ -295,18 +295,20 @@
               <label>还款到期日
                 <input id="dueDayInput" type="number" min="1" max="31" value="15">
               </label>
-              <label>提前提醒天数
-                <input id="remindDaysInput" type="number" min="0" max="30" value="7">
-              </label>
               <label>提醒方式
                 <select id="reminderChannelInput">
+                  <option value="inherit" selected>跟随全局设置</option>
                   <option value="calendar">手机/日历提醒</option>
                   <option value="email">邮件提醒</option>
-                  <option value="both" selected>两者都要</option>
+                  <option value="both">两者都要</option>
                 </select>
               </label>
-              <label>提醒邮箱
-                <input id="reminderEmailInput" type="email" placeholder="name@example.com">
+              <p class="field-hint full-row" id="reminderInheritHint" hidden></p>
+              <label id="remindDaysField" hidden>提前提醒天数
+                <input id="remindDaysInput" type="number" min="0" max="30" value="7">
+              </label>
+              <label id="reminderEmailField" hidden>提醒邮箱（可填多个，用逗号分隔）
+                <input id="reminderEmailInput" type="text" placeholder="me@example.com, partner@example.com">
               </label>
               <label>开卡 / 周年日期
                 <input id="anniversaryInput" type="date">
@@ -630,14 +632,24 @@
                   <option value="no">关闭</option>
                 </select>
               </label>
-              <label>默认提醒邮箱
-                <input id="defaultReminderEmailInput" type="email" placeholder="name@example.com">
+              <label>默认提醒方式
+                <select id="reminderChannelDefaultInput">
+                  <option value="calendar">手机/日历提醒</option>
+                  <option value="email">邮件提醒</option>
+                  <option value="both" selected>两者都要</option>
+                </select>
               </label>
-              <label>还款提前提醒
+              <label class="full-row">提醒邮箱（可填多个，用逗号分隔；留空默认用你的登录邮箱）
+                <input id="defaultReminderEmailInput" type="text" placeholder="me@example.com, partner@example.com">
+              </label>
+              <label>还款提前提醒（天）
                 <input id="paymentReminderDaysInput" type="number" min="0" max="60" value="7">
               </label>
-              <label>福利到期提前提醒
-                <input id="benefitReminderDaysInput" type="number" min="0" max="120" value="14">
+              <label>福利到期提醒 ①（天）
+                <input id="benefitReminderDaysInput" type="number" min="0" max="120" value="15">
+              </label>
+              <label>福利到期提醒 ②（天，0 或留空＝关闭）
+                <input id="benefitReminderDays2Input" type="number" min="0" max="120" value="7">
               </label>
               <label>每周总结
                 <select id="weeklyDigestInput">

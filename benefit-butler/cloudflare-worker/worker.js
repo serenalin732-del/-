@@ -864,7 +864,7 @@ async function sendDueReminders(env, userId = null) {
   const since = addDays(nowUtc, -45);
   const until = addDays(nowUtc, 2);
   const [settingsRows, profileRows, existingLogs, cards, benefits] = await Promise.all([
-    supabase(env, "automation_settings?select=user_id,email_reminder_enabled,default_reminder_email,payment_reminder_days,benefit_reminder_days&limit=1000"),
+    supabase(env, "automation_settings?select=user_id,email_reminder_enabled,default_reminder_email,reminder_channel,payment_reminder_days,benefit_reminder_days,benefit_reminder_days_2&limit=1000"),
     supabase(env, "profiles?select=id,timezone&limit=2000"),
     supabase(env, `reminder_logs?select=user_id,subject,created_at&created_at=gte.${since}T00:00:00Z&created_at=lt.${until}T00:00:00Z&limit=5000`),
     supabase(env, "cards?select=id,user_id,card_name,nickname,due_day,reminder_days_before,reminder_channel,reminder_email,anniversary_date&limit=1000"),
@@ -878,15 +878,18 @@ async function sendDueReminders(env, userId = null) {
   let sent = 0;
 
   async function fire(userId, to, subject, text, meta) {
+    const recipients = parseRecipients(to);
+    if (!recipients.length) return;
     const key = `${userId}::${subject}`;
     if (sentKeys.has(key)) return;
-    const providerResponse = await sendEmail(env, to, subject, text);
+    // One email addressed to all configured recipients (e.g. self + partner).
+    const providerResponse = await sendEmail(env, recipients, subject, text);
     await supabase(env, "reminder_logs", {
       method: "POST",
       body: JSON.stringify({
         user_id: userId,
         channel: "email",
-        recipient: to,
+        recipient: recipients.join(", "),
         subject,
         status: "sent",
         provider_response: { ...providerResponse, ...meta },
@@ -901,8 +904,12 @@ async function sendDueReminders(env, userId = null) {
     if (userId && card.user_id !== userId) continue;
     const settings = settingsByUser.get(card.user_id) || {};
     if (settings.email_reminder_enabled === false) continue;
-    if (!["email", "both"].includes(card.reminder_channel || "calendar")) continue;
-    // Fall back to the account-wide reminder email when the card has none.
+    // 'inherit' (or null) cards follow the user's global default method.
+    const channel = !card.reminder_channel || card.reminder_channel === "inherit"
+      ? (settings.reminder_channel || "both")
+      : card.reminder_channel;
+    if (!["email", "both"].includes(channel)) continue;
+    // Fall back to the account-wide reminder email(s) when the card has none.
     const to = card.reminder_email || settings.default_reminder_email;
     if (!to || !card.due_day) continue;
     const today = todayInTimeZone(tzByUser.get(card.user_id));
@@ -933,6 +940,8 @@ async function sendDueReminders(env, userId = null) {
     if (userId && benefit.user_id !== userId) continue;
     const settings = settingsByUser.get(benefit.user_id) || {};
     if (settings.email_reminder_enabled === false) continue;
+    // Benefit reminders are email-only; respect the user's global method.
+    if (!["email", "both"].includes(settings.reminder_channel || "both")) continue;
     const to = settings.default_reminder_email;
     if (!to) continue;
     const remaining = Number(benefit.total_value || 0) - Number(benefit.used_value || 0);
@@ -941,13 +950,23 @@ async function sendDueReminders(env, userId = null) {
     const card = cardsById.get(benefit.card_id);
     const endDate = benefit.cycle_end || benefitCycleEndDate(benefit.cycle, card, today);
     if (!endDate) continue;
-    const reminderDays = Number(settings.benefit_reminder_days ?? 14);
     const diff = daysBetweenDates(today, endDate); // endDate - today, in whole days
-    // Remind through the run-up to expiry (and catch up if a cron run was missed).
-    if (!(diff >= 0 && diff <= reminderDays)) continue;
-    const subject = `Benefit reminder: ${benefit.name} (by ${endDate})`;
-    const text = `Benefit reminder for ${benefit.name}${card ? ` on ${card.nickname || card.card_name}` : ""}. Cycle ends ${endDate} (in ${diff} day${diff === 1 ? "" : "s"}). Remaining tracked value: $${Math.max(0, Math.round(remaining))}.`;
-    await fire(benefit.user_id, to, subject, text, { type: "benefit", benefitId: benefit.id, cardId: benefit.card_id, scheduledFor: today });
+    if (diff < 0) continue;
+    // Up to two distinct reminder windows (e.g. 15 days out, then again 7 days
+    // out). Each window is a separate band with its own subject so the user gets
+    // both nudges, and per-band dedup keeps each to a single email per cycle.
+    const windows = [Number(settings.benefit_reminder_days ?? 15), Number(settings.benefit_reminder_days_2)]
+      .filter(d => Number.isFinite(d) && d > 0)
+      .sort((a, b) => b - a)
+      .filter((d, i, arr) => arr.indexOf(d) === i);
+    for (let i = 0; i < windows.length; i++) {
+      const upper = windows[i];
+      const lower = i + 1 < windows.length ? windows[i + 1] : -1; // smallest band reaches the due day
+      if (!(diff <= upper && diff > lower)) continue;
+      const subject = `Benefit reminder (${upper}d): ${benefit.name} (by ${endDate})`;
+      const text = `Benefit reminder for ${benefit.name}${card ? ` on ${card.nickname || card.card_name}` : ""}. Cycle ends ${endDate} (in ${diff} day${diff === 1 ? "" : "s"}). Remaining tracked value: $${Math.max(0, Math.round(remaining))}.`;
+      await fire(benefit.user_id, to, subject, text, { type: "benefit", window: upper, benefitId: benefit.id, cardId: benefit.card_id, scheduledFor: today });
+    }
   }
 
   return json({ ok: true, sent });
@@ -1024,6 +1043,16 @@ function benefitCycleEndDate(cycle = "", card = null, todayText = new Date().toI
     return next.toISOString().slice(0, 10);
   }
   return "";
+}
+
+// Accepts a single address or a comma/semicolon/space separated list and
+// returns an array of valid recipients (e.g. self + partner).
+function parseRecipients(value) {
+  if (Array.isArray(value)) value = value.join(",");
+  return String(value || "")
+    .split(/[,;\s]+/)
+    .map(s => s.trim())
+    .filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
 }
 
 async function sendEmail(env, to, subject, text) {
